@@ -1,3 +1,5 @@
+![VRAM Calculator](assets/banner.jpg)
+
 # VRAM Calculator
 
 Static web app for estimating GPU memory, throughput, latency, energy, and cloud cost for LLM inference, fine-tuning (Full / LoRA / QLoRA), and image/video diffusion.
