@@ -170,7 +170,7 @@
     const cur = id === 'model' ? state.model : state.gpu === 'custom' ? (state.customApple ? 'custom-apple' : 'custom') : state.gpu;
     pop = document.createElement('div');
     pop.className = 'pop';
-    pop.innerHTML = `<input class="input" placeholder="${id === 'model' ? 'Search 290+ models…' : 'Search GPUs, e.g. 4090, H100, M4…'}" aria-label="Search"><div class="pop-list" role="listbox"></div>`;
+    pop.innerHTML = `<input class="input" placeholder="${id === 'model' ? `Search ${MODELS.length} models…` : 'Search GPUs, e.g. 4090, H100, M4…'}" aria-label="Search"><div class="pop-list" role="listbox"></div>`;
     document.body.appendChild(pop);
     const r = btn.getBoundingClientRect();
     pop.style.left = `${Math.max(8, r.left + scrollX)}px`;

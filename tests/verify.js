@@ -12,7 +12,6 @@ const ctx = { window: {} }; ctx.window = ctx; vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(dir, 'data.js'), 'utf8'), ctx);
 const D = ctx.VRAM_DATA;
 const C = require(path.join(dir, 'calc.js'));
-C.applyFixes(D);
 const GiB = 2 ** 30;
 const M = (s) => D.models.find((m) => m.slug === s);
 const Gk = (k) => D.gpus.find((g) => g.key === k);
@@ -79,8 +78,8 @@ console.log('2. Physics bounds over every model × GPU');
         if (!r.perf) continue;
         checked++;
         const G = r.geometry;
-        // roofline: one decode step must read at least the active weights once
-        const activeBytes = C.weightBytes(G, q) * (G.moe ? G.A / G.P : 1) * 0.9;
+        // roofline: one decode step must read at least the active (streamed) weights once
+        const activeBytes = (C.weightBytes(G, q) - C.unreadBytes(G, q)) * (G.moe ? G.A / G.P : 1) * 0.9;
         const roof = g.bandwidth_gbs * 1e9 / activeBytes;
         if (r.perf.tps > roof) { viol++; if (viol < 6) console.log(`  ✗ ${m.slug} on ${g.key} ${q}: ${r.perf.tps.toFixed(0)} tok/s > roofline ${roof.toFixed(0)}`); }
         if (!(r.perf.ttft > 0 && Number.isFinite(r.perf.tps))) { viol++; console.log(`  ✗ ${m.slug} ${g.key} invalid perf`); }
@@ -164,10 +163,18 @@ console.log('5. Dataset: Qwen configs, GPUs, duplicates');
   ok(new Set(names).size === names.length, 'no duplicate model names', names.filter((n, i) => names.indexOf(n) !== i).join(', '));
   ok(new Set(D.models.map((m) => m.slug)).size === D.models.length, 'no duplicate slugs');
   ok(D.models.every((m) => !m.release_date || m.release_date <= '2026-11-21'), 'no models dated in the future');
-  // Every new model computes without NaN on a big GPU
-  for (const m of D.models.filter((x) => x._added)) {
+  // Every model in the curated dataset has complete geometry, sane params, and computes without NaN
+  for (const m of D.models) {
     const rr = C.calculate({ ...base, opt: base.opt }, m, Gk('b300_288'));
-    ok(Number.isFinite(rr.memory.perGpu) && (!rr.perf || Object.values(rr.perf).every((v) => typeof v !== 'number' || Number.isFinite(v))), `${m.slug} computes`);
+    ok(Number.isFinite(rr.memory.perGpu) && rr.memory.perGpu > 0 && (!rr.perf || Object.values(rr.perf).every((v) => typeof v !== 'number' || Number.isFinite(v))), `${m.slug} computes`);
+    if (m.task_type === 'text_generation') {
+      const G = C.geometry(m);
+      ok(m.hidden_dim_size > 0 && m.num_of_layers > 0 && m.num_attention_heads > 0 && m.vocab_size > 0 && m.context_length > 0, `${m.slug} has complete core config`);
+      if (G.moe) {
+        ok(G.A > 0 && G.A < G.P, `${m.slug} MoE active < total`, `A=${G.A}, P=${G.P}`);
+        near(G.shared + G.routed * G.f, G.A, 1e-6, `${m.slug} MoE shared + routed*f = A`);
+      }
+    }
   }
 }
 
