@@ -1,8 +1,10 @@
-![LLM Simulator](assets/banner.jpg)
-
 # LLM Simulator
 
+**[Try LLM Simulator →](https://omarbaker8.github.io/llm-simulator/)**
+
 Static web app for estimating GPU memory, throughput, latency, energy, and cloud cost for LLM inference, fine-tuning (Full / LoRA / QLoRA), and image/video diffusion.
+
+[![LLM Simulator screenshot](assets/banner.png)](https://omarbaker8.github.io/llm-simulator/)
 
 ## Usage
 

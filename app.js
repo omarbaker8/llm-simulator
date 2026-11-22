@@ -119,7 +119,10 @@
   const fmtMs = (ms) => (ms >= 60000 ? `${(ms / 60000).toFixed(1)} min` : ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`);
   const fmtDur = (h) => (h < 1 / 60 ? `${Math.max(1, Math.round(h * 3600))} s` : h < 1 ? `${Math.round(h * 60)} min` : h < 48 ? `${h.toFixed(1)} h` : `${(h / 24).toFixed(1)} days`);
   const fmtTok = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n)));
-  const fmtCtx = (n) => (n >= 1048576 ? `${+(n / 1048576).toFixed(1)}M` : n >= 1024 ? `${+(n / 1024).toFixed(1)}K` : String(n));
+  const fmtCtx = (n) => {
+    if (n % 1000 === 0 && n % 1024 !== 0) return n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${+(n / 1e3).toFixed(1)}K`;
+    return n >= 1048576 ? `${+(n / 1048576).toFixed(1)}M` : n >= 1024 ? `${+(n / 1024).toFixed(1)}K` : String(n);
+  };
   const usd = (x, d = 2) => `$${x.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`;
 
   /* ---------------- input widgets ---------------- */

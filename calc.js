@@ -543,7 +543,7 @@
     const dyn = kvGpu + actGpu;
     const fragGpu = dyn * R.frag;
     const ctxGpu = R.ctxGiB * GiB;
-    const graphGpu = R.graphGiB * GiB;
+    const graphGpu = isApple(g) ? 0 : R.graphGiB * GiB;
     const commGpu = Lyt.n > 1 ? 0.25 * GiB : 0; // NCCL buffers
     if (Lyt.tp > Math.min(G.kvh, K.globalKvh || G.kvh) && !G.mla) W.push(`TP degree ${Lyt.tp} exceeds the model's ${Math.min(G.kvh, K.globalKvh || G.kvh)} KV heads — KV heads are replicated on layers with fewer heads.`);
     if (Lyt.tp > 1 && G.mla) W.push('MLA latent KV is replicated on every tensor-parallel rank (it cannot be split by head).');
@@ -554,11 +554,11 @@
       ['act', 'Activations & logits', actGpu],
       ...(inp.spec ? [['draft', 'Draft model', draftGpu]] : []),
       ['ctx', `${g.vendor === 'amd' ? 'ROCm' : isApple(g) ? 'Metal' : 'CUDA'} context & workspaces`, ctxGpu],
-      ...(graphGpu ? [['graph', 'CUDA graphs', graphGpu]] : []),
+      ...(graphGpu ? [['graph', g.vendor === 'amd' ? 'HIP graphs' : 'CUDA graphs', graphGpu]] : []),
       ...(commGpu ? [['comm', 'Collective buffers', commGpu]] : []),
       ['frag', 'Allocator fragmentation', fragGpu],
     ];
-    T.push({ g: 'Memory', k: 'Runtime overhead', f: `${R.label}: context ${R.ctxGiB} GiB + graphs ${R.graphGiB} GiB + ${Math.round(R.frag * 100)}% fragmentation of KV+activations${commGpu ? ' + 0.25 GiB NCCL' : ''} (per GPU)`, v: gib(ctxGpu + graphGpu + fragGpu + commGpu) });
+    T.push({ g: 'Memory', k: 'Runtime overhead', f: `${R.label}: context ${R.ctxGiB} GiB${graphGpu ? ` + graphs ${R.graphGiB} GiB` : ''} + ${Math.round(R.frag * 100)}% fragmentation of KV+activations${commGpu ? ' + 0.25 GiB NCCL' : ''} (per GPU)`, v: gib(ctxGpu + graphGpu + fragGpu + commGpu) });
 
     const perGpu = segsGpu.reduce((a, s) => a + s[2], 0);
     // Cluster total: every replica holds the weights, but each holds only its own users' KV (uneven splits handled);
