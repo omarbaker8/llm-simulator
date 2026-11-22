@@ -1,4 +1,4 @@
-/* GPU Simulator — UI. All math lives in calc.js; this file only collects inputs and renders results. */
+/* LLM Simulator — UI. All math lives in calc.js; this file only collects inputs and renders results. */
 (function () {
   'use strict';
   const D = window.VRAM_DATA;

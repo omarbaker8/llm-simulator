@@ -95,8 +95,8 @@ section('B. KV cache per token (bytes) and totals');
   exact('DeepSeek-V3.2 DSA (latent 576 + 132 B indexer)', '61 × (576×2 + 132)', 61 * (576 * 2 + 132), kvpt('deepseek-v32', { quant: 'fp8' }), 0.01);
   exact('GLM-5 DSA', '78 × (576×2 + 132)', 78 * (576 * 2 + 132), kvpt('glm-5', { quant: 'fp8' }), 0.01);
   exact('GLM-5.3 DSA (indexer every 4th layer)', '78 × (576×2 + 132/4)', 78 * (576 * 2 + 33), kvpt('glm-53', { quant: 'fp8' }), 0.01);
-  exact('DeepSeek-V4-Flash (21 ÷4 + 20 ÷128)', '(21/4 + 20/128) × (576×2 + 132)', (21 / 4 + 20 / 128) * (576 * 2 + 132), kvpt('deepseek-v4-flash', { quant: 'fp8' }), 0.01);
-  exact('DeepSeek-V4-Pro (30 ÷4 + 31 ÷128)', '(30/4 + 31/128) × (576×2 + 132)', (30 / 4 + 31 / 128) * (576 * 2 + 132), kvpt('deepseek-v4-pro', { quant: 'fp8' }), 0.01);
+  exact('DeepSeek-V4-Flash (21 CSA ÷4 + 20 HCA ÷128; indexer on CSA only)', '(21/4 + 20/128)·576·2 + 21/4·132', (21 / 4 + 20 / 128) * 576 * 2 + 21 / 4 * 132, kvpt('deepseek-v4-flash', { quant: 'fp8' }), 0.01);
+  exact('DeepSeek-V4-Pro (30 CSA ÷4 + 31 HCA ÷128; indexer on CSA only)', '(30/4 + 31/128)·576·2 + 30/4·132', (30 / 4 + 31 / 128) * 576 * 2 + 30 / 4 * 132, kvpt('deepseek-v4-pro', { quant: 'fp8' }), 0.01);
   exact('DeepSeek-V4.1-Flash FP4 KV = model card 890 B', 'card', 890, kvpt('deepseek-v4-1-flash', { quant: 'fp8', kvQuant: 'nvfp4' }), 0.01);
   exact('Llama-3.1-8B Q8_0 KV (llama.cpp)', '32 × 2 × 8 × 128 × 1.0625', kvTok(32, 8, 128, 1.0625), kvpt('llama-3-1-8b', { runtime: 'llamacpp', kvQuant: 'q8_0' }), 0.01);
   exact('Llama-3.1-8B Q4_0 KV (llama.cpp)', '32 × 2 × 8 × 128 × 0.5625', kvTok(32, 8, 128, 0.5625), kvpt('llama-3-1-8b', { runtime: 'llamacpp', kvQuant: 'q4_0' }), 0.01);
@@ -264,8 +264,13 @@ section('F. Published benchmarks');
   bench('llama.cpp Llama-2-7B Q4_0 A100 pp512', 'llama.cpp CUDA scoreboard #15013', 4850, sb('a100_80').perf.prefillTps, 30);
   bench('gpt-oss-20b MXFP4 RTX 4090 llama.cpp', 'llama.cpp discussion #15396', 222, run(INF, 'gpt-oss-20b', '4090_24', { quant: 'mxfp4', runtime: 'llamacpp', seq: 4096 }).perf.tps, 15);
   bench('gpt-oss-120b MXFP4 M2 Ultra llama.cpp', 'llama.cpp discussion #15396', 80, run(INF, 'gpt-oss-120b', 'm2_ultra_192', { quant: 'mxfp4', runtime: 'llamacpp', seq: 4096 }).perf.tps, 25);
-  bench('DeepSeek-R1 FP8 8×H200 SGLang batch 1', 'Verda blog', 47.7, run(INF, 'deepseek-r1-671b', 'h200_141', { quant: 'fp8', numGpus: 8, runtime: 'sglang', seq: 2048 }).perf.tps, 30);
-  bench('gpt-oss-120b 8×B200 TensorRT-LLM batch 1', 'TensorRT-LLM tech blog 9', 420, run(INF, 'gpt-oss-120b', 'b200_192', { quant: 'mxfp4', numGpus: 8, runtime: 'trtllm', interconnect: 'nvlink_gen5', seq: 2048 }).perf.tps, 45);
+  { const t = run(INF, 'deepseek-r1-671b', 'h200_141', { quant: 'fp8', numGpus: 8, runtime: 'vllm', seq: 9216, outputTokens: 1024 }).perf.tps;
+    check('DeepSeek-V3/R1 FP8 8×H200 batch 1 within measured 47.7 (SGLang, Verda) – 63.1 (vLLM recipe, 15.85 ms TPOT)', t > 47.7 * 0.95 && t < 63.1 * 1.05, `${t.toFixed(1)} tok/s`); }
+  bench('gpt-oss-120b 8×B200 TensorRT-LLM TP8/EP1 batch 1, 1k/2k', 'TensorRT-LLM tech blog 9', 420, run(INF, 'gpt-oss-120b', 'b200_192', { quant: 'mxfp4', numGpus: 8, runtime: 'trtllm', interconnect: 'nvlink_gen5', seq: 3072, outputTokens: 2048 }).perf.tps, 10);
+  // Qwen speed benchmark (H20 96GB, SGLang 0.4.6, batch 1, input 1, 2048 out). Its dense rows sit ~2× under bandwidth
+  // estimates (e.g. Qwen3-8B BF16 = 33% of H20 bandwidth), so these are loose checks of the MoE multi-GPU overhead.
+  bench('Qwen3-235B-A22B BF16 TP8 H20 SGLang batch 1', 'Qwen speed benchmark', 74.5, run(INF, 'qwen3-235b-a22b', 'h20_96', { runtime: 'sglang', numGpus: 8, seq: 2049, outputTokens: 2048 }).perf.tps, 30);
+  bench('Qwen3-235B-A22B FP8 TP4 H20 SGLang batch 1', 'Qwen speed benchmark', 71.65, run(INF, 'qwen3-235b-a22b', 'h20_96', { quant: 'fp8', runtime: 'sglang', numGpus: 4, seq: 2049, outputTokens: 2048 }).perf.tps, 35);
   const big = (par) => run(INF, 'llama-3-1-405b', 'h200_141', { quant: 'fp8', kvQuant: 'fp8', runtime: 'trtllm', numGpus: 8, parallelism: par, users: 1024, seq: 2176, outputTokens: 128 });
   const tpT = big('tensor'), ppT = big('pipeline');
   bench('405B 8×H200 TP max throughput 2048/128', 'NVIDIA H200 NVLink Switch blog', 506, tpT.perf.throughput, 30);
@@ -391,6 +396,29 @@ section('I. Inputs, warnings, runtime / format rules');
 }
 
 /* =========================================================================================================== */
+section('K. Researched follow-ups (MiniMax-M3, Vera Rubin, Apple M5)');
+{
+  // MiniMax-M3: HF safetensors total 427.04B; config text model 426.19B + norms; vision 0.63B + projector 0.07B.
+  const mmG = C.geometry(M('minimax-m3'));
+  exact('MiniMax-M3 text + vision = HF safetensors total 427.04B', '426.34 + 0.70', 427.04e9, mmG.P + mmG.unread, 0.05);
+  exact('MiniMax-M3 active (excl. embeddings) = config 23.23B', '60·attn + 3 dense + 57·5 experts', 23.23e9, mmG.Amm - mmG.outP, 3);
+  const mmK = C.kvLayout(M('minimax-m3'), mmG);
+  exact('MiniMax-M3 KV/token: 60 GQA layers + 128-d BF16 index keys on 57 sparse layers', '60·2·4·128·2 + 57·256', 60 * 2 * 4 * 128 * 2 + 57 * 256, run(INF, 'minimax-m3', 'b300_288', { numGpus: 8, quant: 'fp8' }).memory.kvPerToken, 0.01);
+  exact('MiniMax-M3 decode attends top-16 × 128 blocks on sparse layers at 128K', '(57·2048 + 3·131072)/60', (57 * 2048 + 3 * 131072) / 60, C.attendedAt(mmK, 131072), 0.01);
+  const sparseR = run(INF, 'minimax-m3', 'b300_288', { numGpus: 8, quant: 'fp8', seq: 262144, users: 4 });
+  const denseR = run(INF, { ...M('minimax-m3'), sparse_attention_layers: 0, indexer_dim: 0 }, 'b300_288', { numGpus: 8, quant: 'fp8', seq: 262144, users: 4 });
+  check('MiniMax-M3 block-sparse attention decodes faster than a dense clone at 256K', sparseR.perf.tps > denseR.perf.tps, `${sparseR.perf.tps.toFixed(1)} > ${denseR.perf.tps.toFixed(1)}`);
+  exact('Vera Rubin TDP = 2.3 kW (MaxP; NVL72 rack 227 kW MaxP)', '2300 W', 2300, G('r100_288').tdp_watts, 0.01);
+  // Apple M5 Neural Accelerators (MLX): up to 4× M4 TTFT (Apple MLX research post), FLUX 3.8×.
+  const ttft = (gpu) => run(INF, 'qwen3-8b', gpu, { runtime: 'mlx', quant: 'int4', seq: 4224, outputTokens: 128 }).perf.ttft;
+  const r54 = ttft('m4_16') / ttft('m5_16');
+  check('M5 vs M4 time-to-first-token with MLX: 3–4.5× (Apple: up to 4×)', r54 > 3 && r54 < 4.5, `${r54.toFixed(2)}×`);
+  const tg = (gpu) => run(INF, 'qwen3-8b', gpu, { runtime: 'mlx', quant: 'int4', seq: 4224, outputTokens: 128 }).perf.tps;
+  const g54 = tg('m5_16') / tg('m4_16');
+  check('M5 vs M4 generation with MLX: ≈ bandwidth ratio 1.19–1.35× (Apple: +19–27%)', g54 > 1.15 && g54 < 1.35, `${g54.toFixed(2)}×`);
+  check('M5 Neural Accelerators only apply to MLX (llama.cpp keeps the shader rate)', run(INF, 'qwen3-8b', 'm5_max_128', { runtime: 'llamacpp', quant: 'q4_k_m', seq: 4224, outputTokens: 128 }).perf.prefillTps < run(INF, 'qwen3-8b', 'm5_max_128', { runtime: 'mlx', quant: 'int4', seq: 4224, outputTokens: 128 }).perf.prefillTps / 2);
+}
+
 section('J. Dataset & hardware integrity');
 {
   const textModels = D.models.filter((m) => m.task_type === 'text_generation');

@@ -1,4 +1,4 @@
-/* GPU Simulator — calculation engine.
+/* LLM Simulator — calculation engine.
  *
  * Plain, readable JavaScript. Every number the page shows is produced here, and every
  * step is recorded in `result.trace` so the page can print the formula next to the value.
@@ -98,7 +98,10 @@
   const isGeForceFp16Acc = (g) => g.vendor === 'nvidia' && /^(30|50|40[678])\d/.test(g.key);
 
   /** Tensor TFLOPS a PyTorch/CUDA kernel can actually use (bf16 with fp32 accumulate). */
-  function effTflops(g) {
+  function effTflops(g, rtKey) {
+    // Apple M5 GPUs have per-core Neural Accelerators that MLX (macOS 26.2+) uses for matmuls: measured FP16 matmul on a 40-core
+    // M5 Max is 55.6–65.6 TFLOPS (arXiv 2611.00486); Apple reports up to 4× M4 time-to-first-token with MLX.
+    if (rtKey === 'mlx' && g.matmul_tflops) return { v: g.matmul_tflops, note: 'M5 GPU Neural Accelerators (measured FP16 matmul, used by MLX)' };
     // GeForce cards list FP16-accumulate tensor rates; FP32-accumulate (what bf16 kernels use) runs at half.
     if (isGeForceFp16Acc(g)) return { v: g.fp16_tflops / 2, note: 'GeForce RTX 30/40/50: FP32-accumulate rate = ½ the listed FP16-accumulate rate' };
     // Apple GPUs run FP16 at the same ALU rate as FP32; the list doubles it (skip for custom GPU where user enters effective rate).
@@ -205,7 +208,10 @@
         // counts exclude the input embedding (gpt-oss, MiniMax-M2), which would otherwise push attention into the routed pool.
         const linL = m.linear_layer_count != null ? m.linear_layer_count : (m.uses_linear_attention ? Math.round(L * (m.linear_attention_ratio ?? 0.75)) : 0);
         const softLayers = m.attention_layer_count != null ? m.attention_layer_count : Math.max(0, L - linL);
-        const sharedFloor = Math.min(P, embedParams + softLayers * attnParams);
+        // Shared experts run on every token too, so they belong in the always-active bucket (MiniMax-M3's "23B active"
+        // excludes both embedding tables; without this its shared part would be 10.0B instead of ≈13B).
+        const sharedExperts = (m.num_of_shared_experts || 0) * 3 * h * (m.moe_ffn_intermediate_size || 0) * L;
+        const sharedFloor = Math.min(P, embedParams + softLayers * attnParams + sharedExperts);
         if (shared < sharedFloor) { shared = sharedFloor; routed = P - shared; }
       } else {
         routed = P;
@@ -306,13 +312,21 @@
     // Sparse global attention (DeepSeek-V3.2 / GLM-5 DSA, DeepSeek-V4 CSA, V4.1 CSA2): a lightning indexer scores every
     // cached entry and the main attention reads only the top-k. V4 additionally stores global KV compressed per layer:
     // kv_compress_layers = { ratio: layers } (V4-Flash config compress_ratios: 21 layers ÷4 (CSA, sparse) + 20 ÷128 (HCA, dense)).
-    const sparse = G.att === 'dsa' || G.att === 'csa2';
+    // MiniMax-M3 style block-sparse GQA: sparse_attention_layers use top-k (blocks × block size) tokens, the rest stay dense.
+    const sparseGqa = !G.mla && m.sparse_attention_layers > 0;
+    const sparse = G.att === 'dsa' || G.att === 'csa2' || sparseGqa;
     let groups = null, full2 = full;
     if (m.kv_compress_layers) {
       groups = Object.entries(m.kv_compress_layers).map(([r, n]) => ({ r: Math.max(1, Number(r)), n: Number(n) })).filter((x) => x.n > 0);
       full2 = groups.reduce((a, x) => a + x.n, 0);                     // layers that store global KV
+    } else if (sparseGqa) {
+      const ns = Math.min(full, m.sparse_attention_layers);
+      groups = [{ r: 1, n: ns }, ...(full > ns ? [{ r: 1, n: full - ns, dense: true }] : [])];
     } else if (sparse) groups = [{ r: 1, n: full }];
-    const storeFrac = groups ? groups.reduce((a, x) => a + x.n / x.r, 0) / Math.max(1, groups.reduce((a, x) => a + x.n, 0)) : 1; // stored entries per token per layer
+    const nAll = groups ? Math.max(1, groups.reduce((a, x) => a + x.n, 0)) : 1;
+    const storeFrac = groups ? groups.reduce((a, x) => a + x.n / x.r, 0) / nAll : 1;   // stored entries per token per layer
+    const isIdx = (x) => !x.dense && x.r < 64;                                           // CSA/DSA layers; HCA (÷128) and dense layers have no indexer
+    const idxFrac = groups ? groups.reduce((a, x) => a + (isIdx(x) ? x.n / x.r : 0), 0) / nAll : 1;
     let elems, fullElems, kind, baseElems = 0, lat = 0;
     const globalKvh = m.global_kv_heads || G.kvh;
     const globalHd = m.global_head_dim || G.hd;
@@ -333,7 +347,7 @@
     const idxRaw = m.indexer_dim != null ? m.indexer_dim : (sparse ? 132 : 0);
     // GLM-5.2/5.3 run the indexer every index_topk_freq-th layer and reuse its top-k elsewhere (keys + FLOPs ÷ freq).
     const idxFreq = Math.max(1, m.index_topk_freq || 1);
-    const indexer = idxRaw * storeFrac / idxFreq;
+    const indexer = idxRaw * idxFrac / idxFreq;
     const topk = m.index_topk || 2048, idxHeads = m.index_n_heads || 64, idxDim = m.index_head_dim || 128;
     // Per-layer recurrent state (bf16), independent of length. With published Gated-DeltaNet / Mamba-2 geometry:
     // value_heads × key_dim × value_dim, plus the short-conv state (2·key_heads·key_dim + value_heads·value_dim) × (kernel − 1).
@@ -352,7 +366,7 @@
   function attendedAt(K, T) {
     if (!K.groups) return T;
     let num = 0, den = 0;
-    for (const x of K.groups) { const tc = T / x.r; num += x.n * (K.sparse && x.r < 64 ? Math.min(K.topk, tc) : tc); den += x.n; }
+    for (const x of K.groups) { const tc = T / x.r; num += x.n * (K.sparse && !x.dense && x.r < 64 ? Math.min(K.topk, tc) : tc); den += x.n; }
     return den ? num / den : T;
   }
   /** Σ over a causal prompt of T tokens of the entries each query attends, per full-attention layer (prefill). */
@@ -360,7 +374,7 @@
     if (!K.groups) return T * T / 2;
     let num = 0, den = 0;
     for (const x of K.groups) {
-      const cap = K.sparse && x.r < 64 ? K.topk : Infinity, lim = cap * x.r;
+      const cap = K.sparse && !x.dense && x.r < 64 ? K.topk : Infinity, lim = cap * x.r;
       num += x.n * (T <= lim ? T * T / (2 * x.r) : cap * T - cap * cap * x.r / 2); den += x.n;
     }
     return den ? num / den : T * T / 2;
@@ -369,7 +383,7 @@
   function indexedAt(K, T) {
     if (!K.sparse || !K.groups) return 0;
     let num = 0, den = 0;
-    for (const x of K.groups) { num += x.n * (x.r < 64 ? T / x.r : 0); den += x.n; }
+    for (const x of K.groups) { num += x.n * (!x.dense && x.r < 64 ? T / x.r : 0); den += x.n; }
     return den ? num / den / (K.idxFreq || 1) : 0;
   }
   /** KV bytes for ONE sequence holding `T` tokens. */
@@ -446,7 +460,7 @@
     const Lyt = layout(inp);
     const shards = Lyt.tp * Lyt.pp;           // GPUs holding one copy of the model
     const replicas = Lyt.dp;
-    const tfl = effTflops(g);
+    const tfl = effTflops(g, rtKey);
     const usable = usableGiB(g);
     const dBw = deviceBw(g);
     // llama.cpp/Ollama single-stream CUDA dequant kernels achieve ~68% of their consumer bwEff on datacenter HBM GPUs.
@@ -633,7 +647,9 @@
     const tpCompEff = Lyt.tp > 1 ? 1 / (1 + 0.04 * Math.log2(Lyt.tp)) : 1;
     const tCompStage = (effFlopsTok * sMicro / Lyt.pp) / (tfl.v * 1e12 * Lyt.tp * tpCompEff * 0.5);
     // Per-layer launch/dispatch overhead: MoE launches router+top-k+permute+grouped-GEMM; multi-GPU MoE + MLA add dispatch/combine sync.
-    const moeMult = G.moe ? (Lyt.tp > 1 ? (G.mla ? 36 : 5.5) : 2.5) : 1;
+    // Calibrated at batch 1: MLA-MoE TP8 (DeepSeek-V3/R1 8×H200: vLLM 15.9 ms, SGLang 21.0 ms per token) and GQA-MoE TP8
+    // (gpt-oss-120b TP8/EP1 TensorRT-LLM 8×B200: 420 tok/s ⇒ ≈58 µs per MoE layer incl. 2 all-reduces).
+    const moeMult = G.moe ? (Lyt.tp > 1 ? (G.mla ? 36 : 10) : 2.5) : 1;
     // llama.cpp / Ollama on datacenter GPUs: ≈34 µs per layer per token (scoreboard #15013, Llama-2-7B Q4_0: H100 268 and
     // A100 191 tok/s both imply +0.78 ms per token over the bandwidth time at 32 layers).
     const ggufDc = (rtKey === 'llamacpp' || rtKey === 'ollama') && g.category === 'datacenter';
@@ -691,7 +707,7 @@
     // Prefill attention runs un-absorbed (MLA: 4 × mean(qk 192, v 128) = 4 × 160 per head per pair).
     const hfFullPf = 4 * (K.mla ? G.hd : (m.global_head_dim || G.hd));
     const swaPairsOf = (t) => K.window && t > K.window ? K.window * (t - K.window / 2) : t * t / 2;
-    const idxPairsOf = (t) => (K.sparse && K.groups ? K.fullAttn * (K.groups.reduce((a, x) => a + x.n * (x.r < 64 ? t * t / (2 * x.r) : 0), 0) / K.groups.reduce((a, x) => a + x.n, 0)) / (K.idxFreq || 1) : 0);
+    const idxPairsOf = (t) => (K.sparse && K.groups ? K.fullAttn * (K.groups.reduce((a, x) => a + x.n * (!x.dense && x.r < 64 ? t * t / (2 * x.r) : 0), 0) / K.groups.reduce((a, x) => a + x.n, 0)) / (K.idxFreq || 1) : 0);
     const pfAttnFlops = (t) => G.heads * (K.fullAttn * attendedPairs(K, t) * hfFullPf + K.swaAttn * swaPairsOf(t) * 4 * G.hd);
     const pfIdxFlops = (t) => idxPairsOf(t) * 2 * K.idxHeads * K.idxDim;
     const prefillTimeFor = (toks, pipelined) => {

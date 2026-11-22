@@ -307,7 +307,7 @@ console.log('7. Specialist audit regression tests');
   ok(C.geometry(M('deepseek-v4-1-flash')).unread === 196e9, 'DeepSeek-V4.1-Flash includes 196B unread Engram tables');
   const v4f = run('deepseek-v4-flash', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
   // config.json compress_ratios: 21 CSA layers ÷4 + 20 HCA layers ÷128 (+2 SWA-only); 576-element latent, 132 B indexer keys.
-  near(v4f.memory.kvPerToken, (21 / 4 + 20 / 128) * (576 * 1 + 132), 1e-9, 'DeepSeek-V4-Flash KV: 21 layers ÷4 + 20 layers ÷128');
+  near(v4f.memory.kvPerToken, (21 / 4 + 20 / 128) * 576 * 1 + (21 / 4) * 132, 1e-9, 'DeepSeek-V4-Flash KV: 21 CSA layers ÷4 (+ indexer keys) + 20 HCA layers ÷128');
   ok(v4f.memory.kvPerToken < 0.1 * run('deepseek-v32', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 }).memory.kvPerToken, 'DeepSeek-V4-Flash KV < 10% of V3.2 (card: V4-Pro 10% at 1M)');
 
   // 2. Gemma 4 heterogeneous global vs sliding KV
@@ -337,8 +337,9 @@ console.log('7. Specialist audit regression tests');
   // 5. Multi-GPU MoE bs=1 realistic speeds + consumer MoE preserved
   const ds8 = run('deepseek-v3', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor', seq: 4096, outputTokens: 512, users: 1 });
   range(ds8.perf.tps, 35, 75, 'DeepSeek-V3 FP8 8×H200 TP8 u=1 ≈ 45–65 tok/s');
-  const oss8 = run('gpt-oss-120b', 'b200_192', { quant: 'mxfp4', numGpus: 8, parallelism: 'tensor', interconnect: 'nvlink_gen5', seq: 4096, outputTokens: 512, users: 1 });
-  range(oss8.perf.tps, 340, 500, 'gpt-oss-120b MXFP4 8×B200 TP8 u=1 ≈ 420 tok/s');
+  // Reference is TensorRT-LLM (tech blog 9: TP8/EP1, batch 1, 1k/2k), so pin the runtime.
+  const oss8 = run('gpt-oss-120b', 'b200_192', { quant: 'mxfp4', runtime: 'trtllm', numGpus: 8, parallelism: 'tensor', interconnect: 'nvlink_gen5', seq: 3072, outputTokens: 2048, users: 1 });
+  range(oss8.perf.tps, 360, 480, 'gpt-oss-120b MXFP4 8×B200 TP8 TensorRT-LLM u=1 ≈ 420 tok/s');
   // Reference is llama.cpp (discussion #15396), so pin the runtime: the GGUF keeps attention/embeddings in Q8_0, vLLM in BF16.
   const oss20 = run('gpt-oss-20b', '4090_24', { quant: 'mxfp4', runtime: 'llamacpp', seq: 4096, outputTokens: 512, users: 1 });
   range(oss20.perf.tps, 175, 240, 'gpt-oss-20b MXFP4 RTX 4090 llama.cpp u=1 ≈ 200–222 tok/s');
