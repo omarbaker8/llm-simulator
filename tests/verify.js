@@ -172,8 +172,17 @@ console.log('5. Dataset: Qwen configs, GPUs, duplicates');
       ok(m.hidden_dim_size > 0 && m.num_of_layers > 0 && m.num_attention_heads > 0 && m.vocab_size > 0 && m.context_length > 0, `${m.slug} has complete core config`);
       if (G.moe) {
         ok(G.A > 0 && G.A < G.P, `${m.slug} MoE active < total`, `A=${G.A}, P=${G.P}`);
-        near(G.shared + G.routed * G.f, G.A, 1e-6, `${m.slug} MoE shared + routed*f = A`);
+        ok(G.shared > 0, `${m.slug} MoE shared > 0 (catches wrong expert count)`, `shared=${G.shared}`);
+        ok(m.num_of_experts > m.num_of_active_experts && m.num_of_active_experts > 0, `${m.slug} MoE E > k > 0`);
+        near(G.f, m.num_of_active_experts / m.num_of_experts, 1e-9, `${m.slug} MoE f === k/E (no fallback clamp)`);
+        ok(m.moe_ffn_intermediate_size > 0, `${m.slug} MoE has moe_ffn_intermediate_size`);
       }
+      ok(m.num_of_auxiliary_params == null, `${m.slug} text model has no unsplit num_of_auxiliary_params`);
+      ok(!('num_dense_layers' in m), `${m.slug} has no unused num_dense_layers field`);
+    } else {
+      // Non-UNet diffusion models must have hidden_dim_size = heads * head_dim (not joint_attention_dim)
+      const isUnet = /stable-diffusion-(1|2)|sdxl|sd-2|kandinsky|svd/.test(m.slug);
+      if (!isUnet) ok(m.hidden_dim_size === m.num_attention_heads * m.attention_head_dim, `${m.slug} diffusion h === heads*hd`, `h=${m.hidden_dim_size}, heads*hd=${m.num_attention_heads * m.attention_head_dim}`);
     }
   }
 }
@@ -253,7 +262,20 @@ console.log('6. Regression tests (third-review fixes)');
     ok(seg(r, 'weights') > 1 && Number.isFinite(r.memory.perGpu), `${slug} has valid weights & no NaN with spec`);
   }
   ok(C.geometry(M('minimax-m3')).moe, 'MiniMax-M3 recognized as MoE');
-  ok(C.geometry(M('minimax-m2')).shared + C.geometry(M('minimax-m2')).routed * C.geometry(M('minimax-m2')).f - C.geometry(M('minimax-m2')).A < 1e6, 'MiniMax-M2 active params consistent');
+  ok(C.geometry(M('minimax-m2')).shared > 1e9, 'MiniMax-M2 shared params > 1B');
+
+  // 11. Fourth-review dataset & GPU datasheet fixes
+  const klG = C.geometry(M('kimi-linear-48b-a3b-instruct'));
+  ok(M('kimi-linear-48b-a3b-instruct').num_of_experts === 256 && klG.shared > 1e9, 'Kimi-Linear 48B has 256 experts & shared > 1B');
+  ok(M('phi-3-mini').link_weights.includes('128k'), 'Phi-3-mini link matches 128K context');
+  ok(M('mistral-large-3').moe_ffn_intermediate_size === 4096 && M('mistral-large-3').attention_head_dim === 160, 'Mistral Large 3 has moe_ffn=4096 & hd=160');
+  near(Number(M('gemma-3-4b').num_of_params) + Number(M('gemma-3-4b').num_of_unread_params), 4.30, 0.01, 'Gemma 3 4B splits vision encoder into unread params');
+  const g4e2K = C.kvLayout(M('gemma-4-e2b'), C.geometry(M('gemma-4-e2b')));
+  ok(g4e2K.full + g4e2K.swa === 15 && g4e2K.fullAttn + g4e2K.swaAttn === 35, 'Gemma 4 E2B: 15 KV source layers, 35 compute layers');
+  const nemK = C.kvLayout(M('nvidia-nemotron-3-nano-30b-a3b'), C.geometry(M('nvidia-nemotron-3-nano-30b-a3b')));
+  ok(nemK.full === 6 && nemK.lin === 23, 'Nemotron-3-Nano: 6 GQA layers + 23 Mamba-2 state layers');
+  ok(M('flux-2-dev').hidden_dim_size === 6144 && M('stable-diffusion-3-5-large').hidden_dim_size === 2432 && M('stable-diffusion-3-5-medium').hidden_dim_size === 1536, 'Diffusion hidden dims match heads × head_dim');
+  ok(Gk('h100nvl_94').tdp_watts === 400 && Gk('h200nvl_141').fp16_tflops === 835.5 && Gk('mi350x_288').fp16_tflops === 2309.6 && Gk('gb10_128').fp16_tflops === 125, 'Datacenter/GB10 GPU datasheet specs verified');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

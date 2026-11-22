@@ -216,11 +216,16 @@
   function kvLayout(m, G) {
     let L = G.L;
     const srcLayers = m.kv_source_layer_count && m.kv_source_layer_count < L ? m.kv_source_layer_count : L; // cross-layer KV sharing
-    const lin = m.uses_linear_attention ? Math.round(L * (m.linear_attention_ratio ?? 0.75)) : 0;
-    const soft = Math.max(0, srcLayers - Math.round(lin * srcLayers / L));
+    const lin = m.linear_layer_count != null ? m.linear_layer_count
+      : (m.uses_linear_attention ? Math.round(L * (m.linear_attention_ratio ?? 0.75)) : 0);
+    const totalSoft = m.attention_layer_count != null ? m.attention_layer_count : Math.max(0, L - lin);
+    const soft = m.attention_layer_count != null ? Math.min(srcLayers, totalSoft) : Math.max(0, srcLayers - Math.round(lin * srcLayers / L));
     const swaOk = m.uses_sliding_window && m.sliding_window_size && !G.mla;
     const swa = swaOk ? Math.round(soft * (m.sliding_window_ratio ?? 1)) : 0;
     const full = soft - swa;
+    // Attention-compute layers (cross-layer KV sharing skips KV storage, not attention compute)
+    const swaAttn = swaOk ? Math.round(totalSoft * (m.sliding_window_ratio ?? 1)) : 0;
+    const fullAttn = totalSoft - swaAttn;
     let elems, kind;
     if (G.mla) {
       const lat = m.kv_latent_dim || 512;
@@ -228,7 +233,7 @@
       kind = `MLA latent ${elems}`;
     } else { elems = 2 * G.kvh * G.hd; kind = `2 × ${G.kvh} KV heads × ${G.hd} dim`; }
     const indexer = G.att === 'dsa' || G.att === 'csa2' ? (m.indexer_dim || 128) : (m.indexer_dim || 0); // lightning-indexer keys (FP8, 1 byte)
-    // Per-layer recurrent state (bf16), independent of length. With published Gated-DeltaNet geometry:
+    // Per-layer recurrent state (bf16), independent of length. With published Gated-DeltaNet / Mamba-2 geometry:
     // value_heads × key_dim × value_dim, plus the short-conv state (2·key_heads·key_dim + value_heads·value_dim) × (kernel − 1).
     // Without it, fall back to attention heads × head_dim².
     let linState = 0, linKind = '';
@@ -237,7 +242,7 @@
       linState = (vh * dk * dv + (2 * kh * dk + vh * dv) * (ck - 1)) * 2;
       linKind = `${vh} value heads × ${dk}×${dv} state + conv (${2 * kh * dk + vh * dv} ch × ${ck - 1}) × 2 B`;
     } else if (lin) { linState = G.heads * G.hd * G.hd * 2; linKind = `${G.heads} heads × ${G.hd}² × 2 B (estimated)`; }
-    return { full, swa, lin, window: m.sliding_window_size || 0, elems, kind, indexer, linState, linKind };
+    return { full, swa, fullAttn, swaAttn, lin, window: m.sliding_window_size || 0, elems, kind, indexer, linState, linKind };
   }
   /** KV bytes for ONE sequence holding `T` tokens. */
   function kvBytesSeq(K, T, kvB) {
@@ -403,7 +408,7 @@
     const kvRead = kvBytesGroup(K, avgCtx, Math.min(sharedTok, avgCtx), sRep, kvB);
     const gpuW = wReadEff * (1 - offFrac);
     const tMem = (gpuW / Lyt.tp + (offKvFlag ? 0 : kvRead / kvShard)) / (bw * bwEff);
-    const flopsTok = 2 * (G.moe ? G.A : G.P) + 4 * (K.full * avgCtx + K.swa * Math.min(avgCtx, K.window || avgCtx)) * G.heads * G.hd;
+    const flopsTok = 2 * (G.moe ? G.A : G.P) + 4 * (K.fullAttn * avgCtx + K.swaAttn * Math.min(avgCtx, K.window || avgCtx)) * G.heads * G.hd;
     // W8A8 FP8 and W4A4 NVFP4 checkpoints run their GEMMs on low-precision tensor cores (dense rates vs BF16).
     const lowP = lowPrecisionX(q, g);
     const tComp = (flopsTok * sRep) / (tfl.v * lowP.x * 1e12 * Lyt.tp * 0.5);
@@ -466,7 +471,7 @@
     const pfTfl = ggufPath && !isApple(g) ? tfl.v * int8x : tfl.v * fp8x;
     const pfEff = isApple(g) ? 0.68 : R.pfEff;
     const swaPairs = K.window && promptTok > K.window ? K.window * (promptTok - K.window / 2) : promptTok * promptTok / 2;
-    const attnPf = 4 * (K.full * promptTok * promptTok / 2 + K.swa * swaPairs) * G.heads * G.hd * batch;
+    const attnPf = 4 * (K.fullAttn * promptTok * promptTok / 2 + K.swaAttn * swaPairs) * G.heads * G.hd * batch;
     const pfFlops = 2 * (G.moe ? G.A : G.P) * pfTok + attnPf;
     const pfComp = pfFlops / (pfTfl * 1e12 * pfEff * Lyt.tp);
     const pfChunkTok = Math.min(R.chunk, pfTok);
@@ -588,7 +593,7 @@
     const kvDim = G.mla ? 576 : G.kvh * G.hd;
     const perTokLayer = (7 * G.h + 2 * kvDim + 4 * G.ffnActive) * 2;
     const effSeqLen = o.sequence_packing ? seqLen : o.dynamic_padding ? Math.min(seqLen, Math.ceil(inp.tokensPerSample * 1.15)) : seqLen;
-    const softFrac = G.L > 0 ? (KL.full + KL.swa) / G.L : 1;
+    const softFrac = G.L > 0 ? (KL.fullAttn + KL.swaAttn) / G.L : 1;
     const attnScores = o.flash_attention ? 0 : 2 * G.heads * effSeqLen * 2 * softFrac; // eager attention stores T×T softmax on softmax layers
     const tokens = mb * effSeqLen;
     const ck = o.gradient_checkpointing ? clamp(o.gradient_checkpointing_ratio ?? 1, 0, 1) : 0;
@@ -622,7 +627,7 @@
     // Per token: 2 × active params + causal attention 4 × (average attended tokens) × heads × head_dim on softmax layers only
     // (full layers attend T/2 on average; sliding-window layers W·(1 − W/(2T)); linear-attention layers are O(1)).
     const swaAvg = KL.window && effSeqLen > KL.window ? KL.window * (1 - KL.window / (2 * effSeqLen)) : effSeqLen / 2;
-    const attended = KL.full * effSeqLen / 2 + KL.swa * swaAvg;
+    const attended = KL.fullAttn * effSeqLen / 2 + KL.swaAttn * swaAvg;
     const flopsFwd = 2 * G.A + 4 * attended * G.heads * G.hd;
     const mult = method === 'full' ? 3 : 2;                                          // fwd + bwd (LoRA skips weight grads)
     const recompute = ck * 1;                                                        // one extra forward for checkpointed layers
