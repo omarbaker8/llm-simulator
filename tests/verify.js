@@ -381,6 +381,13 @@ console.log('7. Specialist audit regression tests');
     const rb = C.calculate({ ...base, ...bad }, mBad, Gk('h100_80'));
     ok(Number.isFinite(rb.memory.perGpu) && rb.memory.perGpu > 0 && (!rb.perf || Object.values(rb.perf).every((v) => typeof v !== 'number' || Number.isFinite(v))), 'Malformed input produces finite non-NaN output');
   }
+
+  // 10. Datacenter llama.cpp long-context prefill applies MMQ dequant penalty to matmuls only, not FP16 FlashAttention
+  const nem1m = run('nvidia-nemotron-3-nano-30b-a3b', 'b300_288', { quant: 'iq2_m', runtime: 'llamacpp', seq: 1048576, outputTokens: 511, batch: 8 });
+  range(nem1m.perf.ttft / 1000, 75, 115, 'Nemotron-3-Nano 1M prompt on B300 llama.cpp TTFT ≈ 90–95 s (not 300 s)');
+  range(nem1m.perf.prefillTps, 9500, 14000, 'Nemotron-3-Nano 1M prompt on B300 llama.cpp prefill ≈ 11k tok/s');
+  const lcApple = run('codestral-2501', 'm3_max_36', { quant: 'iq2_m', runtime: 'ollama', seq: 49152, outputTokens: 511 });
+  ok(!lcApple.memory.segments.some((s) => s.key === 'graph'), 'Apple Silicon does not reserve CUDA graphs');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -701,9 +701,10 @@
     // Matmul speed-up in prefill: INT8 MMQ (llama.cpp on GeForce) or FP8/FP4 tensor cores; attention stays BF16.
     const pfLinX = ggufPath && !isApple(g) ? int8x : fp8x;
     const pfTfl = tfl.v * pfLinX;
-    // llama.cpp MMQ prefill on datacenter GPUs is limited by integer dequant, not tensor TFLOPS: achieved ≈ 3.86 · TFLOPS^0.514
-    // (scoreboard pp512: H100 9918 vs A100 4850 tok/s = 2.04× for 3.17× the TFLOPS).
-    const pfEff = isApple(g) ? 0.68 : (ggufPath && g.category === 'datacenter' ? Math.min(R.pfEff, 3.86 * Math.pow(tfl.v * pfLinX, -0.486)) : R.pfEff);
+    // llama.cpp MMQ prefill on datacenter GPUs is limited by integer dequant on quantized weight matmuls (≈ 3.86 · TFLOPS^0.514;
+    // scoreboard pp512: H100 9918 vs A100 4850 tok/s = 2.04× for 3.17× the TFLOPS), while FP16 FlashAttention runs at R.pfEff.
+    const pfAttnEff = isApple(g) ? 0.68 : R.pfEff;
+    const pfLinEff = isApple(g) ? 0.68 : (ggufPath && g.category === 'datacenter' ? Math.min(R.pfEff, 3.86 * Math.pow(tfl.v * pfLinX, -0.486)) : R.pfEff);
     // Prefill attention runs un-absorbed (MLA: 4 × mean(qk 192, v 128) = 4 × 160 per head per pair).
     const hfFullPf = 4 * (K.mla ? G.hd : (m.global_head_dim || G.hd));
     const swaPairsOf = (t) => K.window && t > K.window ? K.window * (t - K.window / 2) : t * t / 2;
@@ -712,8 +713,7 @@
     const pfIdxFlops = (t) => idxPairsOf(t) * 2 * K.idxHeads * K.idxDim;
     const prefillTimeFor = (toks, pipelined) => {
       if (toks <= 0) return 0;
-      const effFlopsP = 2 * G.Amm * toks / pfLinX + pfAttnFlops(toks) + pfIdxFlops(toks) / idxX;
-      const pfCompAll = effFlopsP / (tfl.v * 1e12 * pfEff * Lyt.tp * tpCompEff);
+      const pfCompAll = (2 * G.Amm * toks / (pfLinX * pfLinEff) + (pfAttnFlops(toks) + pfIdxFlops(toks) / idxX) / pfAttnEff) / (tfl.v * 1e12 * Lyt.tp * tpCompEff);
       const cTok = Math.min(R.chunk, toks);
       const nChunks = Math.ceil(toks / cTok);
       const pfW = Math.max(0, wB - ub);
@@ -768,7 +768,7 @@
 
     const ttft = tPrefill + tStepDecode;
     T.push({ g: 'Speed', k: 'Prefill FLOPs', f: `2 × ${fmtP(G.Amm)} ${G.moe ? 'active ' : ''}matmul params (input lookup excluded) × ${pfTok.toLocaleString()} prompt tokens + causal attention${K.sparse ? ' (top-' + K.topk + ' sparse) + indexer' : ''}`, v: `${(pfFlops / 1e12).toFixed(2)} TFLOP` });
-    T.push({ g: 'Speed', k: 'Time to first token', f: `max(FLOPs ÷ (${pfTfl.toFixed(1)} TFLOPS${ggufPath && !isApple(g) ? (int8x > 1 ? ' (INT8 MMQ)' : ' (MMQ, no INT8 boost)') : fp8x > 1 ? ` (${lowP.label})` : ''} × ${pfEff}${Lyt.tp > 1 ? ` × ${Lyt.tp}` : ''}), ${chunks} chunk weight reads)${offFrac > 0 ? ' + offload streaming' : ''} + first decode step`, v: ms(ttft) });
+    T.push({ g: 'Speed', k: 'Time to first token', f: `max(FLOPs ÷ (${pfTfl.toFixed(1)} TFLOPS${ggufPath && !isApple(g) ? (int8x > 1 ? ' (INT8 MMQ)' : ' (MMQ, no INT8 boost)') : fp8x > 1 ? ` (${lowP.label})` : ''} × ${pfLinEff.toFixed(2)}${pfLinEff !== pfAttnEff ? ` matmul / ${pfAttnEff.toFixed(2)} attn` : ''}${Lyt.tp > 1 ? ` × ${Lyt.tp}` : ''}), ${chunks} chunk weight reads)${offFrac > 0 ? ' + offload streaming' : ''} + first decode step`, v: ms(ttft) });
     const ttftQueued = uRep > 1 ? prefillTimeFor(pfTok, true) * uRep + tStepDecode : ttft;
 
     // ---- power ----
