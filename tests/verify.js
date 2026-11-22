@@ -38,7 +38,10 @@ console.log('1. Exact formulas');
   near(seg(r, 'weights'), 8.03e9 * 2 / GiB, 1e-6, 'Llama-3.1-8B FP16 weights = 8.03e9 × 2 B');
   near(r.memory.kvPerToken, 2 * 32 * 8 * 128 * 2, 1e-9, 'Llama-3.1-8B KV/token = 2·32·8·128·2 = 128 KiB');
   near(seg(r, 'kv'), 1.0, 1e-9, 'KV @ 8192 tokens = 1 GiB');
-  near(seg(run('llama-3-1-8b', 'h100_80', { seq: 8192, batch: 4 }), 'kv'), 4.0, 1e-9, 'KV scales with batch (4 → 4 GiB)');
+  const b1 = run('llama-3-1-8b', 'h100_80', { seq: 8192, outputTokens: 512, batch: 1 });
+  const b4 = run('llama-3-1-8b', 'h100_80', { seq: 8192, outputTokens: 512, batch: 4 });
+  near(seg(b4, 'kv'), (7680 + 4 * 512) / 8192, 1e-9, 'Batch n=4 shares prompt KV (7680 + 4×512 = 9728 tok)');
+  near(b4.perf.prefillTps, b1.perf.prefillTps, 1e-9, 'Batch n=4 prefills the shared prompt once');
   near(seg(run('llama-3-1-8b', 'h100_80', { seq: 8192, users: 16 }), 'kv'), 16.0, 1e-9, 'KV scales with users (16 → 16 GiB, no cap)');
   near(seg(run('llama-3-1-8b', 'h100_80', { seq: 8192, outputTokens: 512, users: 4, prefixShare: 0.5 }), 'kv'), (3840 + 4 * (8192 - 3840)) * 2 * 32 * 8 * 128 * 2 / GiB, 1e-9, '50% shared prompt prefix (3840 tok), 4 users (output tokens not shared)');
   near(seg(run('llama-3-1-8b', 'h100_80', { seq: 8192, kvQuant: 'fp8' }), 'kv'), 0.5, 1e-9, 'FP8 KV halves the cache');
@@ -49,16 +52,18 @@ console.log('1. Exact formulas');
   const gExpect = (10 * 32768 + 52 * 1024) * 2 * 16 * 128 * 2 / GiB;
   near(seg(gm, 'kv'), gExpect, 1e-9, 'Gemma-3-27B: 10 global + 52 sliding(1024) layers');
   const oss = run('gpt-oss-120b', 'h100_80', { quant: 'mxfp4' });
-  near(seg(oss, 'weights'), ((116.8e9 - 201088 * 2880 * 2) * 4.25 / 8 + 201088 * 2880 * 2 * 2) / GiB, 1e-6, 'gpt-oss-120b MXFP4 with 16-bit embeddings');
-  range(seg(oss, 'weights'), 57, 62, 'gpt-oss-120b ≈ 60.8 GiB checkpoint');
+  const ossG = C.geometry(M('gpt-oss-120b'));
+  const ossFull16 = 201088 * 2880 * 2 + ossG.L * ossG.attnParams;
+  near(seg(oss, 'weights'), ((116.8e9 - ossFull16) * 4.25 / 8 + ossFull16 * 2) / GiB, 1e-6, 'gpt-oss-120b MXFP4 with 16-bit embeddings + attention');
+  range(seg(oss, 'weights'), 59.5, 62, 'gpt-oss-120b ≈ 60.7 GiB checkpoint');
   // fine-tuning
   const ft = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', seq: 2048 });
   near(seg(ft, 'weights') + seg(ft, 'grads') + seg(ft, 'optim'), 8.03e9 * 16 / GiB, 1e-6, 'Full FT mixed-precision AdamW = 16 B/param (2+2+4+8)');
   const ql = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'qlora', seq: 2048 });
-  near(seg(ql, 'weights'), 8.03e9 * 4.127 / 8 / GiB, 1e-6, 'QLoRA NF4 = 4.127 bits/param');
   const lo = C.geometry(M('llama-3-1-8b'));
-  const loraP = 16 * 32 * ((4096 + 4096) * 2 + (4096 + 1024) * 2 + 3 * (4096 + 14336));
-  ok(ft && loraP === 41943040, 'LoRA r16 all-linear on Llama-8B = 41.9M params', `got ${loraP}`);
+  near(seg(ql, 'weights'), ((8.03e9 - lo.embedParams) * 4.127 / 8 + lo.embedParams * 2) / GiB, 1e-6, 'QLoRA NF4 (4.127 bpw) with BF16 embeddings');
+  const loraP = Math.round(seg(ql, 'lora') * GiB / 4);
+  ok(loraP === 41943040, 'calc.js LoRA r16 all-linear on Llama-8B = 41.94M params', `got ${loraP}`);
   ok(!lo.tied, 'Llama-3.1-8B detected as untied embeddings');
   ok(C.geometry(M('llama-3-2-1b')).tied, 'Llama-3.2-1B detected as tied embeddings');
   // energy
@@ -97,17 +102,24 @@ console.log('2. Physics bounds over every model × GPU');
 
 console.log('3. Monotonicity');
 {
-  const v = (o) => run('llama-3-1-8b', 'h100_80', o);
-  let prev = 0;
-  for (const b of [1, 2, 4, 8, 16, 32, 64, 128]) { const x = v({ batch: b }).memory.perGpu; ok(x > prev, `VRAM grows with batch ${b}`); prev = x; }
-  prev = 0;
-  for (const u of [1, 2, 8, 9, 16, 64, 128]) { const x = v({ users: u }).memory.perGpu; ok(x > prev, `VRAM grows with users ${u}`); prev = x; }
-  prev = Infinity;
-  for (const s of [2048, 8192, 32768, 131072]) { const x = v({ seq: s }).perf; if (x) { ok(x.tps < prev, `tok/s falls as context grows (${s})`); prev = x.tps; } }
-  prev = 0;
-  for (const u of [1, 4, 16, 64]) { const x = v({ users: u }).perf.throughput; ok(x > prev, `aggregate throughput rises with users ${u}`); prev = x; }
-  const r4 = v({ users: 4 }).perf;
-  near(r4.throughput, r4.tps * 4, 1e-9, 'per-user × users = total throughput');
+  // Sweep across every architecture family: dense GQA, MoE, MLA, sliding window, and hybrid linear attention.
+  for (const [slug, gpuKey, extra] of [
+    ['llama-3-1-8b', 'h100_80', {}],
+    ['qwen3-30b-a3b', 'h100_80', { quant: 'fp8' }],
+    ['deepseek-v3', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor' }],
+    ['gemma-3-27b', 'h100_80', { quant: 'fp8' }],
+    ['qwen35-27b', 'h100_80', { quant: 'fp8' }],
+  ]) {
+    const v = (o) => run(slug, gpuKey, { ...extra, ...o });
+    let prev = 0;
+    for (const b of [1, 2, 4, 8, 16, 32]) { const x = v({ batch: b }).memory.perGpu; ok(x > prev, `${slug}: VRAM grows with batch ${b}`); prev = x; }
+    prev = 0;
+    for (const u of [1, 2, 8, 16, 64]) { const x = v({ users: u }).memory.perGpu; ok(x > prev, `${slug}: VRAM grows with users ${u}`); prev = x; }
+    prev = Infinity;
+    for (const s of [2048, 8192, 32768, 131072]) { const x = v({ seq: s }).perf; if (x) { ok(x.tps < prev, `${slug}: tok/s falls as context grows (${s})`); prev = x.tps; } }
+    prev = 0;
+    for (const u of [1, 4, 16, 64]) { const x = v({ users: u }).perf; if (x) { ok(x.throughput > prev, `${slug}: aggregate throughput rises with users ${u}`); prev = x.throughput; } }
+  }
   const bw = ['h100_80', 'h200_141', 'b200_192'].map((k) => run('gemma-3-27b', k).perf.tps);
   ok(bw[0] < bw[1] && bw[1] < bw[2], 'more bandwidth → faster decode (H100 < H200 < B200)', bw.map((x) => x.toFixed(0)).join(' < '));
   const tp = [1, 2, 4].map((n) => run('llama-3-1-70b', 'h100_80', { numGpus: n, parallelism: 'tensor', quant: 'fp8' }));
@@ -208,14 +220,14 @@ console.log('6. Regression tests (third-review fixes)');
   const customApple = { key: 'custom', label: 'Custom Apple', type: 'apple_silicon', vendor: 'apple', category: 'consumer', memory: 128, bandwidth_gbs: 546, fp16_tflops: 17, tdp_watts: 60 };
   near(C.effTflops(customApple).v, 17, 1e-9, 'Custom Apple Silicon keeps user-entered effective TFLOPS');
 
-  // 4. Dense multimodal models exclude unread vision weights from decode wRead
+  // 4. Dense multimodal models exclude unread vision weights from decode wRead (tight comparison against a no-unread clone)
+  const q08m = M('qwen35-08b');
   const q08 = run('qwen35-08b', '4090_24', { quant: 'q4_k_m', runtime: 'llamacpp', seq: 1024, outputTokens: 128 });
-  const q08G = C.geometry(M('qwen35-08b'));
-  const q08TextB = q08G.P * C.QUANTS.q4_k_m.bpw / 8;
+  const q08NoVis = C.calculate({ ...base, quant: 'q4_k_m', runtime: 'llamacpp', seq: 1024, outputTokens: 128 }, { ...q08m, num_of_unread_params: 0 }, Gk('4090_24'));
+  const q08G = C.geometry(q08m);
   const q08UnreadB = C.unreadBytes(q08G, 'q4_k_m');
-  ok(seg(q08, 'weights') * GiB > q08TextB + q08UnreadB * 0.99, 'Dense VL memory includes vision weights');
-  const q08StepMemMax = (q08TextB + C.kvBytesSeq(C.kvLayout(M('qwen35-08b'), q08G), 1024, 2)) / (Gk('4090_24').bandwidth_gbs * 1e9 * 0.74);
-  ok(q08.perf.stepMs / 1000 < q08StepMemMax + 0.002, 'Dense VL decode does not stream unread vision weights');
+  ok(seg(q08, 'weights') * GiB > seg(q08NoVis, 'weights') * GiB + q08UnreadB * 0.99, 'Dense VL memory includes vision weights');
+  near(q08.perf.tps, q08NoVis.perf.tps, 1e-9, 'Dense VL decode speed is identical with or without unread vision weights');
 
   // 5. MLA / tp > kvh KV bandwidth uses kvShard, not tp
   const mla1 = run('deepseek-v3', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor', seq: 131072, users: 4, outputTokens: 512 });
@@ -223,27 +235,33 @@ console.log('6. Regression tests (third-review fixes)');
   const minKvTimeMs = mlaKv / (Gk('h200_141').bandwidth_gbs * 1e9 * 0.8) * 1000;
   ok(mla1.perf && mla1.perf.stepMs > minKvTimeMs, 'MLA TP8 decode time accounts for full replicated KV read per GPU', `stepMs=${mla1.perf && mla1.perf.stepMs.toFixed(1)}, minKv=${minKvTimeMs.toFixed(1)}`);
 
-  // 6. Data-parallel replicated KV, prefixShare, and throughput
+  // 6. Data-parallel replicated KV, prefixShare, and throughput (independent of TP/single-GPU baseline)
   const dp1 = run('llama-3-1-8b', 'h100_80', { numGpus: 4, parallelism: 'replicated', users: 1, batch: 1, seq: 8192 });
+  const solo8 = run('llama-3-1-8b', 'h100_80', { numGpus: 1, users: 1, batch: 1, seq: 8192 });
   near(seg(dp1, 'kv'), 1.0, 1e-9, 'DP=4 with 1 user still needs 1.0 GiB KV on active GPU');
-  near(dp1.perf.throughput, dp1.perf.tps, 1e-9, 'DP=4 with 1 user has total throughput = 1 × per-user speed');
+  near(dp1.perf.throughput, solo8.perf.tps, 1e-6, 'DP=4 with 1 user matches 1-GPU solo throughput (idle replicas add 0)');
   const dp4sh = run('llama-3-1-8b', 'h100_80', { numGpus: 4, parallelism: 'replicated', users: 4, batch: 1, seq: 8192, prefixShare: 1.0 });
   near(seg(dp4sh, 'kv'), 1.0, 1e-9, 'DP=4 with 4 users & 100% prefixShare: each replica stores 1 full sequence');
+  const dp4 = run('llama-3-1-8b', 'h100_80', { numGpus: 4, parallelism: 'replicated', users: 4, batch: 1, seq: 8192 });
+  near(dp4.perf.throughput, solo8.perf.tps * 4, 1e-6, 'DP=4 with 4 users scales 4× over 1-GPU solo speed');
   const dp5 = run('llama-3-1-8b', 'h100_80', { numGpus: 4, parallelism: 'replicated', users: 5, batch: 1, seq: 8192 });
-  near(dp5.perf.throughput, dp5.perf.tps * 5, 1e-9, 'DP=4 with 5 users has total throughput = 5 × per-user speed');
+  ok(dp5.perf.throughput > dp4.perf.throughput && dp5.perf.tps < dp4.perf.tps, 'DP=4 with 5 users has higher total throughput than 4 users, lower per-user speed');
 
   // 7. Cluster TP*PP > n clamps safely so total weights never shrink below actual model weights
   const cl = run('llama-3-1-70b', 'h100_80', { cluster: true, numNodes: 1, gpusPerNode: 8, tpDegree: 8, ppDegree: 2 });
   near(seg(cl, 'weights') * 8, 70.55e9 * 2 / GiB, 1e-6, 'Cluster TP*PP > n clamps so total weights match model size');
   ok(cl.warnings.some((w) => /clamped/i.test(w)), 'Cluster TP*PP > n emits warning');
 
-  // 8. Fine-tuning packed step count & step time consistency, gated offload penalties, FP8 speedup
+  // 8. Fine-tuning packed step count & step time consistency, 1-GPU & multi-GPU offload gating, FP8 speedup
   const ftPack = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 2, gradSteps: 4, numSamples: 10000, tokensPerSample: 512, numEpochs: 3, opt: { sequence_packing: true, gradient_checkpointing: true } });
   ok(ftPack.perf.steps === Math.ceil(10000 * 512 * 3 / 16384), 'Packed FT steps = ceil(15.36M / 16384) = 938', `got ${ftPack.perf.steps}`);
   near(ftPack.perf.steps * (1 / ftPack.perf.stepsPerSec), ftPack.perf.hours * 3600, 0.002, 'Packed FT steps × stepTime ≈ total hours');
-  const ftNoOff = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 2, opt: { offload_param: false, offload_optimizer: false } });
-  const ftGhost = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 2, opt: { offload_param: true, offload_optimizer: true } });
-  near(ftNoOff.perf.trainTps, ftGhost.perf.trainTps, 1e-9, '1-GPU FT ignores inactive ZeRO offload flags in speed');
+  const ft1NoOff = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 2, opt: { offload_param: false, offload_optimizer: false } });
+  const ft1Off = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 2, opt: { offload_param: true, offload_optimizer: true } });
+  ok(ft1Off.memory.perGpu < ft1NoOff.memory.perGpu && ft1Off.perf.trainTps < ft1NoOff.perf.trainTps, '1-GPU FT CPU offload reduces VRAM and applies offload speed penalty');
+  const ftDdpNoOff = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', numGpus: 2, ftMethod: 'lora', seq: 2048, batch: 2, opt: { zero_stage: 0, offload_param: false, offload_optimizer: false } });
+  const ftDdpGhost = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', numGpus: 2, ftMethod: 'lora', seq: 2048, batch: 2, opt: { zero_stage: 0, offload_param: true, offload_optimizer: true } });
+  near(ftDdpNoOff.perf.trainTps, ftDdpGhost.perf.trainTps, 1e-9, 'Multi-GPU plain DDP (ZeRO-0) ignores inactive ZeRO offload flags');
   const ftBf16 = run('llama-3-1-8b', 'h200_141', { mode: 'finetuning', ftMethod: 'full', ftQuant: 'fp16', seq: 2048, batch: 2, opt: { gradient_checkpointing: true } });
   const ftFp8 = run('llama-3-1-8b', 'h200_141', { mode: 'finetuning', ftMethod: 'full', ftQuant: 'fp8', seq: 2048, batch: 2, opt: { gradient_checkpointing: true } });
   ok(ftFp8.perf && ftBf16.perf && ftFp8.perf.trainTps > ftBf16.perf.trainTps * 1.5, 'Full FT FP8 on H200 gets FP8 tensor-core speedup');
@@ -276,6 +294,86 @@ console.log('6. Regression tests (third-review fixes)');
   ok(nemK.full === 6 && nemK.lin === 23, 'Nemotron-3-Nano: 6 GQA layers + 23 Mamba-2 state layers');
   ok(M('flux-2-dev').hidden_dim_size === 6144 && M('stable-diffusion-3-5-large').hidden_dim_size === 2432 && M('stable-diffusion-3-5-medium').hidden_dim_size === 1536, 'Diffusion hidden dims match heads × head_dim');
   ok(Gk('h100nvl_94').tdp_watts === 400 && Gk('h200nvl_141').fp16_tflops === 835.5 && Gk('mi350x_288').fp16_tflops === 2309.6 && Gk('gb10_128').fp16_tflops === 125, 'Datacenter/GB10 GPU datasheet specs verified');
+}
+
+console.log('7. Specialist audit regression tests');
+{
+  // 1. DeepSeek V4 / V4.1 KV compression & Engram unread tables
+  const v41 = run('deepseek-v4-1-flash', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
+  range(v41.memory.kvPerToken, 700, 1100, 'DeepSeek-V4.1-Flash compressed FP8 KV/tok ≈ 890–940 B');
+  ok(C.geometry(M('deepseek-v4-1-flash')).unread === 196e9, 'DeepSeek-V4.1-Flash includes 196B unread Engram tables');
+  const v4f = run('deepseek-v4-flash', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
+  near(v4f.memory.kvPerToken, 43 * (576 + 128) / 4, 1e-9, 'DeepSeek-V4-Flash KV compressed 4×');
+
+  // 2. Gemma 4 heterogeneous global vs sliding KV
+  const g431 = run('gemma-4-31b', 'h100_80', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
+  near(seg(g431, 'kv'), (10 * 131072 * (1 * 4 * 512) + 50 * 1024 * (2 * 16 * 256)) / GiB, 1e-6, 'Gemma-4-31B: 10 global (k=v, 4×512) + 50 swa (2×16×256)');
+  const g426 = run('gemma-4-26b-a4b', 'h100_80', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
+  near(seg(g426, 'kv'), (5 * 131072 * (1 * 2 * 512) + 25 * 1024 * (2 * 8 * 256)) / GiB, 1e-6, 'Gemma-4-26B-A4B: 5 global (k=v, 2×512) + 25 swa');
+  const g4e2 = run('gemma-4-e2b', 'h100_80', { quant: 'fp16', kvQuant: 'fp16', seq: 32768 });
+  const g4e2K = C.kvLayout(M('gemma-4-e2b'), C.geometry(M('gemma-4-e2b')));
+  ok(g4e2K.fullElems === 2 * 1 * 512 && g4e2K.elems === 2 * 1 * 256, 'Gemma-4-E2B: global head_dim=512 (2× wider than sliding 256)');
+  ok(seg(g4e2, 'kv') > 0.1, 'Gemma-4-E2B KV computed with heterogeneous global dims');
+
+  // 3. Multi-user server throughput includes amortized prefill + PP8 beats TP8 at high concurrency on 405B 8×H200
+  const tp1 = run('llama-3-1-405b', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor', seq: 2048, outputTokens: 256, users: 1 });
+  const pp1 = run('llama-3-1-405b', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'pipeline', seq: 2048, outputTokens: 256, users: 1 });
+  ok(tp1.perf.tps > pp1.perf.tps * 4, 'Llama-405B 8×H200 u=1: TP8 much faster than PP8');
+  const tpHi = run('llama-3-1-405b', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor', seq: 2048, outputTokens: 256, users: 256 });
+  const ppHi = run('llama-3-1-405b', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'pipeline', seq: 2048, outputTokens: 256, users: 256 });
+  range(tpHi.perf.throughput, 400, 1100, 'Llama-405B 8×H200 TP8 u=256 prefill-amortized throughput (realistic, not 7000)');
+  ok(ppHi.perf.throughput > tpHi.perf.throughput, 'Llama-405B 8×H200 u=256: PP8 beats TP8 in aggregate throughput', `PP=${ppHi.perf.throughput.toFixed(0)} vs TP=${tpHi.perf.throughput.toFixed(0)}`);
+
+  // 4. llama.cpp on datacenter H100 realistic prefill & decode
+  const lcH100 = run('llama-3-1-8b', 'h100_80', { quant: 'q4_k_m', runtime: 'llamacpp', seq: 1024, outputTokens: 128 });
+  range(lcH100.perf.prefillTps, 7000, 16000, 'llama.cpp 8B Q4_K_M on H100 prefill ≈ 10k tok/s (not 49k)');
+  range(lcH100.perf.tps, 230, 320, 'llama.cpp 8B Q4_K_M on H100 decode ≈ 270 tok/s (not 406)');
+
+  // 5. Multi-GPU MoE bs=1 realistic speeds + consumer MoE preserved
+  const ds8 = run('deepseek-v3', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor', seq: 4096, outputTokens: 512, users: 1 });
+  range(ds8.perf.tps, 35, 75, 'DeepSeek-V3 FP8 8×H200 TP8 u=1 ≈ 45–65 tok/s');
+  const oss8 = run('gpt-oss-120b', 'b200_192', { quant: 'mxfp4', numGpus: 8, parallelism: 'tensor', interconnect: 'nvlink_gen5', seq: 4096, outputTokens: 512, users: 1 });
+  range(oss8.perf.tps, 340, 500, 'gpt-oss-120b MXFP4 8×B200 TP8 u=1 ≈ 420 tok/s');
+  const oss20 = run('gpt-oss-20b', '4090_24', { quant: 'mxfp4', seq: 4096, outputTokens: 512, users: 1 });
+  range(oss20.perf.tps, 175, 240, 'gpt-oss-20b MXFP4 RTX 4090 u=1 ≈ 200–222 tok/s');
+
+  // 6. Diffusion: Wan 2.2 TI2V-5B 32× spatial, FLUX MMDiT ratio, sequential peak VRAM
+  const wan = run('wan-2-2-ti2v-5b', '4090_24', { quant: 'fp16', runtime: 'diffusers', imageWidth: 1280, imageHeight: 704, numFrames: 121, inferenceSteps: 50, guidanceScale: 5 });
+  ok(wan.perf && wan.memory.pct <= 100, 'Wan 2.2 TI2V-5B 720p 121f fits on RTX 4090', `pct=${wan.memory.pct.toFixed(1)}%`);
+  range(wan.perf.seconds, 300, 700, 'Wan 2.2 TI2V-5B 720p 50-step on 4090 ≈ 8–10 min');
+  const fl4090 = run('flux-1-dev', '4090_24', { quant: 'fp8', runtime: 'diffusers', inferenceSteps: 28 });
+  range(fl4090.perf.seconds, 8, 16, 'FLUX.1-dev FP8 28-step on RTX 4090 ≈ 10–13 s');
+  const segSum = fl4090.memory.segments.reduce((a, s) => a + s.gib, 0);
+  near(segSum, fl4090.memory.perGpu, 1e-9, 'Diffusion segments sum identically to perGpu');
+
+  // 7. Hardware & precision helpers (RTX 5090 FP4 8×, B200 180GB usable, MI355X, MLX 4-bit, GGUF large-vocab, no_rope_kv)
+  ok(C.lowPrecisionX(C.QUANTS.nvfp4, Gk('5090_32'), 'vllm').x === 8, 'RTX 5090 NVFP4 = 8× halved FP32-acc BF16');
+  ok(C.lowPrecisionX(C.QUANTS.mxfp4, Gk('mi355x_288'), 'vllm').x === 4, 'MI355X MXFP4 = 4× BF16');
+  ok(C.lowPrecisionX(C.QUANTS.fp8, Gk('h100_80'), 'hf').x === 1, 'HF Transformers does not get W8A8 FP8 tensor-core boost');
+  ok(C.supportsFp8(Gk('mi355x_288')) && Gk('r100_288').bandwidth_gbs === 19200, 'MI355X added & Rubin R100 bandwidth 19200 GB/s');
+  near(C.usableGiB(Gk('b200_192')).v, 180, 1e-9, 'B200 usable HBM = 180 GiB (of 192 raw)');
+  near(run('llama-3-1-8b', 'm4_max_64', { quant: 'int4', runtime: 'mlx' }).memory.weightsGiB, 8.03e9 * 4.5 / 8 / GiB, 1e-6, 'MLX 4-bit = 4.5 bpw across all weights');
+  ok(run('gemma-3-1b', '4090_24', { quant: 'q4_k_m', runtime: 'llamacpp' }).memory.weightsGiB > 1.0e9 * 4.89 / 8 / GiB * 1.1, 'Gemma-3-1B Q4_K_M reflects Q8_0 large-vocab embedding overhead');
+  ok(C.kvLayout(M('glm-53-flash'), C.geometry(M('glm-53-flash'))).elems === 512, 'GLM-5.3-Flash no_rope_kv uses 512 latent elems');
+
+  // 8. Fine-tuning fused cross-entropy & ZeRO-3 gather buffer
+  const ftStd = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 4, opt: { fused_cross_entropy: false } });
+  const ftFce = run('llama-3-1-8b', 'h100_80', { mode: 'finetuning', ftMethod: 'lora', seq: 2048, batch: 4, opt: { fused_cross_entropy: true } });
+  ok(seg(ftFce, 'logits') < seg(ftStd, 'logits') / 10, 'Fused cross-entropy cuts logits VRAM > 10×');
+  const z3_2 = run('llama-3-1-70b', 'h100_80', { mode: 'finetuning', numGpus: 2, opt: { zero_stage: 3 } });
+  const z3_8 = run('llama-3-1-70b', 'h100_80', { mode: 'finetuning', numGpus: 8, opt: { zero_stage: 3 } });
+  near(seg(z3_8, 'comm'), seg(z3_2, 'comm'), 1e-9, 'ZeRO-3 gather buffer does not shrink with N');
+
+  // 9. Malformed / zero / fractional inputs never produce NaN
+  for (const bad of [
+    { batch: 0, users: 0, numGpus: 2.5, seq: 1 },
+    { mode: 'finetuning', batch: 0, gradSteps: 0, numSamples: 0, tokensPerSample: 0, numEpochs: 0, loraRank: 0, opt: undefined },
+    { mode: 'inference', imageWidth: 0, imageHeight: 0, numFrames: 0, inferenceSteps: 0 },
+  ]) {
+    const mBad = bad.imageWidth === 0 ? M('flux-1-dev') : M('llama-3-1-8b');
+    const rb = C.calculate({ ...base, ...bad }, mBad, Gk('h100_80'));
+    ok(Number.isFinite(rb.memory.perGpu) && rb.memory.perGpu > 0 && (!rb.perf || Object.values(rb.perf).every((v) => typeof v !== 'number' || Number.isFinite(v))), 'Malformed input produces finite non-NaN output');
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

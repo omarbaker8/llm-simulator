@@ -97,21 +97,28 @@
     // GeForce cards list FP16-accumulate tensor rates; FP32-accumulate (what bf16 kernels use) runs at half.
     if (isGeForceFp16Acc(g)) return { v: g.fp16_tflops / 2, note: 'GeForce RTX 30/40/50: FP32-accumulate rate = ½ the listed FP16-accumulate rate' };
     // Apple GPUs run FP16 at the same ALU rate as FP32; the list doubles it (skip for custom GPU where user enters effective rate).
-    if (isApple(g) && g.key !== 'custom') return { v: g.fp16_tflops / 2, note: 'Apple GPU: FP16 runs at the FP32 rate (½ listed)' };
+    if (isApple(g) && !g.key.startsWith('custom')) return { v: g.fp16_tflops / 2, note: 'Apple GPU: FP16 runs at the FP32 rate (½ listed)' };
     return { v: g.fp16_tflops, note: 'dense FP16/BF16 tensor rate' };
   }
   const isBlackwell = (g) => /^(b100|b200|b300|r100|gb10|50\d\d|rtx_pro_\d+|rtx_\d+_blackwell|rtx_4\d00_blackwell)/.test(g.key);
-  /** Speed-up of the matmuls over BF16 when weights AND activations are low precision. */
-  function lowPrecisionX(q, g) {
+  const supportsFp8 = (g) => /^(h100|h200|h800|h20|b100|b200|b300|r100|gb10|l40|l4_|l20|40|50|rtx_\d+_ada|rtx_\d+_blackwell|mi300|mi325|mi35[05]|rx_9|radeon_ai_pro_r9700)/.test(g.key);
+  const supportsMxfp4 = (g) => isBlackwell(g) || /^mi35[05]/.test(g.key);
+  /** Speed-up of the matmuls over effective BF16 when weights AND activations run on low-precision tensor cores. */
+  function lowPrecisionX(q, g, rtKey) {
+    // Only serving / compiled engines run native W8A8 FP8 and W4A4 FP4 tensor-core kernels (not llama.cpp/Ollama/HF/MLX).
+    if (rtKey && !['vllm', 'sglang', 'trtllm', 'diffusers', 'tensorrt'].includes(rtKey)) return { x: 1, label: '' };
     if (q.fp8 && supportsFp8(g)) return { x: 2, label: 'FP8 tensor cores' };
     if (q === QUANTS.nvfp4 && isBlackwell(g)) {
-      // dense FP4 ÷ dense BF16: B200 9 / 2.25 PF, B300 15 / 2.25 PF, Rubin 35 / 4 PF (NVFP4 training rate)
-      const x = /^b300/.test(g.key) ? 6.67 : /^r100/.test(g.key) ? 8.75 : 4;
+      // dense FP4 ÷ effective BF16: RTX 50-series 4× FP16-acc = 8× halved FP32-acc; B200 9/2.25=4; B300 15/2.25=6.67; R100 35/4=8.75
+      const x = /^50\d\d/.test(g.key) ? 8 : /^b300/.test(g.key) ? 6.67 : /^r100/.test(g.key) ? 8.75 : 4;
       return { x, label: 'NVFP4 tensor cores' };
+    }
+    if (q === QUANTS.mxfp4 && supportsMxfp4(g)) {
+      const x = /^50\d\d/.test(g.key) ? 8 : /^b300/.test(g.key) ? 6.67 : /^r100/.test(g.key) ? 8.75 : 4;
+      return { x, label: 'MXFP4 tensor cores' };
     }
     return { x: 1, label: '' };
   }
-  const supportsFp8 = (g) => /^(h100|h200|h800|h20|b100|b200|b300|r100|gb10|l40|l4_|l20|40|50|rtx_\d+_ada|rtx_\d+_blackwell|mi300|mi325|mi350|rx_9|radeon_ai_pro_r9700)/.test(g.key);
 
   /** Share of spec-sheet bandwidth that decode kernels can reach on this device family
    *  (measured: llama.cpp Apple-Silicon benchmark thread, ROCm/Vulkan reports). */
@@ -128,6 +135,9 @@
       // macOS caps GPU-wired memory (recommendedMaxWorkingSetSize): ~2/3 below 36 GB, ~3/4 at 36 GB and above.
       const f = g.memory >= 36 ? 0.75 : 2 / 3;
       return { v: g.memory * f, note: `macOS GPU wired-memory limit ≈ ${f === 0.75 ? '75' : '67'}% of unified memory` };
+    }
+    if (g.usable_memory && g.usable_memory < g.memory) {
+      return { v: g.usable_memory, note: `usable HBM (${g.memory} GB raw, ${g.memory - g.usable_memory} GB reserved/ECC)` };
     }
     return { v: g.memory, note: g.type === 'apu' ? 'GPU-accessible share of system memory' : 'total device memory' };
   }
@@ -203,13 +213,29 @@
     return G.unread ? G.unread * (q.bpw >= 16 ? q.bpw / 8 : 2) : 0;
   }
 
-  /** Bytes of weights for a precision; embeddings stay 16-bit for non-GGUF low-bit formats. */
-  function weightBytes(G, quant) {
+  /** Params kept at 16-bit in low-bit checkpoints (embeddings + MoE FP4 attention projections). */
+  function fp16KeptParams(G, quant, rtKey) {
     const q = QUANTS[quant] || QUANTS.fp16;
+    if (rtKey === 'mlx' && quant === 'int4') return { emb: 0, attn: 0, excessGgufEmb: 0 };
     const emb = q.emb16 ? Math.min(G.embedParams, G.P) : 0;
-    // Vision towers / lookup tables are kept at 16-bit by FP8/INT4/FP4 checkpoints and shipped as F16 mmproj files for GGUF.
+    // Production MoE FP4 checkpoints (gpt-oss MXFP4, DeepSeek-R1 NVFP4) keep attention projections in BF16.
+    const attn = (quant === 'mxfp4' || quant === 'nvfp4') && G.moe ? Math.min(G.L * G.attnParams, Math.max(0, G.P - emb)) : 0;
+    // GGUF bpw constants are calibrated on Llama-3-8B (~13.1% embeddings); small large-vocab models (Gemma-3-1B, Qwen3-0.6B)
+    // keep a larger share of parameters in Q6_K/Q8_0 token embeddings.
+    const excessGgufEmb = q.gguf && q.bpw < 8.5 && G.P > 0 ? Math.max(0, G.embedParams - 0.135 * G.P) : 0;
+    return { emb, attn, excessGgufEmb };
+  }
+
+  /** Bytes of weights for a precision; embeddings (and MoE FP4 attention) stay 16-bit for non-GGUF low-bit formats. */
+  function weightBytes(G, quant, rtKey) {
+    const q = QUANTS[quant] || QUANTS.fp16;
     const ub = unreadBytes(G, quant);
-    return (G.P - emb) * q.bpw / 8 + emb * 2 + ub;
+    // MLX 4-bit (affine group-64: 4-bit + fp16 scale + fp16 bias = 4.5 bpw across all weights incl. embeddings).
+    if (rtKey === 'mlx' && quant === 'int4') return G.P * 4.5 / 8 + ub;
+    const kept = fp16KeptParams(G, quant, rtKey);
+    const full16 = kept.emb + kept.attn;
+    const excessB = kept.excessGgufEmb * (8.5 - q.bpw) / 8;
+    return (G.P - full16) * q.bpw / 8 + full16 * 2 + excessB + ub;
   }
 
   /** KV-cache layout: how many layers keep full / windowed / constant-size state. */
@@ -226,13 +252,25 @@
     // Attention-compute layers (cross-layer KV sharing skips KV storage, not attention compute)
     const swaAttn = swaOk ? Math.round(totalSoft * (m.sliding_window_ratio ?? 1)) : 0;
     const fullAttn = totalSoft - swaAttn;
-    let elems, kind;
+    const kvComp = m.kv_compression && m.kv_compression > 1 ? m.kv_compression : 1;
+    let elems, fullElems, kind;
+    const globalKvh = m.global_kv_heads || G.kvh;
+    const globalHd = m.global_head_dim || G.hd;
     if (G.mla) {
       const lat = m.kv_latent_dim || 512;
-      elems = lat >= 576 ? lat : lat + 64; // compressed latent + decoupled RoPE key, shared by K and V
-      kind = `MLA latent ${elems}`;
-    } else { elems = 2 * G.kvh * G.hd; kind = `2 × ${G.kvh} KV heads × ${G.hd} dim`; }
-    const indexer = G.att === 'dsa' || G.att === 'csa2' ? (m.indexer_dim || 128) : (m.indexer_dim || 0); // lightning-indexer keys (FP8, 1 byte)
+      const baseElems = m.no_rope_kv ? lat : (lat >= 576 ? lat : lat + 64); // compressed latent (+ decoupled RoPE key unless no_rope_kv)
+      elems = baseElems / kvComp;
+      fullElems = elems;
+      kind = kvComp > 1 ? `MLA latent ${baseElems} ÷ ${kvComp}× compression` : m.no_rope_kv ? `MLA latent ${elems} (no RoPE key)` : `MLA latent ${elems}`;
+    } else {
+      elems = 2 * G.kvh * G.hd;
+      fullElems = (m.attention_k_eq_v ? 1 : 2) * globalKvh * globalHd;
+      kind = fullElems !== elems && swa > 0
+        ? `sliding 2×${G.kvh}×${G.hd}, global ${m.attention_k_eq_v ? '1' : '2'}×${globalKvh}×${globalHd}`
+        : `${m.attention_k_eq_v && !swa ? '1' : '2'} × ${G.kvh} KV heads × ${G.hd} dim`;
+    }
+    const rawIndexer = G.att === 'dsa' || G.att === 'csa2' ? (m.indexer_dim || 128) : (m.indexer_dim || 0); // lightning-indexer keys (FP8, 1 byte)
+    const indexer = rawIndexer / kvComp;
     // Per-layer recurrent state (bf16), independent of length. With published Gated-DeltaNet / Mamba-2 geometry:
     // value_heads × key_dim × value_dim, plus the short-conv state (2·key_heads·key_dim + value_heads·value_dim) × (kernel − 1).
     // Without it, fall back to attention heads × head_dim².
@@ -242,13 +280,13 @@
       linState = (vh * dk * dv + (2 * kh * dk + vh * dv) * (ck - 1)) * 2;
       linKind = `${vh} value heads × ${dk}×${dv} state + conv (${2 * kh * dk + vh * dv} ch × ${ck - 1}) × 2 B`;
     } else if (lin) { linState = G.heads * G.hd * G.hd * 2; linKind = `${G.heads} heads × ${G.hd}² × 2 B (estimated)`; }
-    return { full, swa, fullAttn, swaAttn, lin, window: m.sliding_window_size || 0, elems, kind, indexer, linState, linKind };
+    return { full, swa, fullAttn, swaAttn, lin, window: m.sliding_window_size || 0, elems, fullElems, globalKvh, globalHd, kvComp, kind, indexer, linState, linKind };
   }
   /** KV bytes for ONE sequence holding `T` tokens. */
   function kvBytesSeq(K, T, kvB) {
     const swaT = K.window ? Math.min(T, K.window) : T;
-    return K.full * T * K.elems * kvB + K.swa * swaT * K.elems * kvB
-      + (K.full * T + K.swa * swaT) * K.indexer + K.lin * K.linState;
+    const fEl = K.fullElems ?? K.elems;
+    return K.full * T * (fEl * kvB + K.indexer) + K.swa * swaT * (K.elems * kvB + K.indexer) + K.lin * K.linState;
   }
   /** KV bytes for `seqs` concurrent sequences of length `T` sharing the first `sharedTok` prompt tokens.
    *  Generated tokens and linear-attention recurrent states are never shared across concurrent sequences. */
@@ -261,7 +299,26 @@
     const shWin = Math.max(0, swaT - unWin);
     const fullTok = sh + seqs * un;
     const swaTok = shWin + seqs * unWin;
-    return (K.full * fullTok + K.swa * swaTok) * (K.elems * kvB + K.indexer) + seqs * K.lin * K.linState;
+    const fEl = K.fullElems ?? K.elems;
+    return K.full * fullTok * (fEl * kvB + K.indexer) + K.swa * swaTok * (K.elems * kvB + K.indexer) + seqs * K.lin * K.linState;
+  }
+  /** KV bytes on one replica serving `uRep` users × `batch` parallel completions each (sharing prompt within each request
+   *  and `sharedPromptTok` across users). Returns { total, fullPart, swaPart, linPart } for exact per-head TP sharding. */
+  function kvBytesReplica(K, promptTok, outTok, uRep, batch, sharedPromptTok, kvB) {
+    const sh = uRep > 1 ? clamp(sharedPromptTok, 0, promptTok) : 0;
+    const T = promptTok + outTok;
+    const fullTok = sh + uRep * (promptTok - sh) + uRep * batch * outTok;
+    const swaT = K.window ? Math.min(T, K.window) : T;
+    const outW = K.window ? Math.min(outTok, K.window) : outTok;
+    const remP = Math.max(0, swaT - outW);
+    const privP = Math.min(promptTok - sh, remP);
+    const shP = Math.max(0, remP - privP);
+    const swaTok = shP + uRep * privP + uRep * batch * outW;
+    const fEl = K.fullElems ?? K.elems;
+    const fullPart = K.full * fullTok * (fEl * kvB + K.indexer);
+    const swaPart = K.swa * swaTok * (K.elems * kvB + K.indexer);
+    const linPart = uRep * batch * K.lin * K.linState;
+    return { total: fullPart + swaPart + linPart, fullPart, swaPart, linPart };
   }
 
   /* ------------------------------------------------------------------ *
@@ -302,7 +359,9 @@
     const tfl = effTflops(g);
     const usable = usableGiB(g);
     const dBw = deviceBw(g);
-    const bwEff = R.bwEff * dBw.v;
+    // llama.cpp/Ollama single-stream CUDA dequant kernels achieve ~68% of their consumer bwEff on datacenter HBM GPUs.
+    const dcGgufBw = (rtKey === 'llamacpp' || rtKey === 'ollama') && g.category === 'datacenter' ? 0.68 : 1;
+    const bwEff = R.bwEff * dBw.v * dcGgufBw;
     const bw = g.bandwidth_gbs * 1e9;
 
     const seq = inp.seq;
@@ -319,25 +378,29 @@
 
     // ---- weights ----
     const ub = unreadBytes(G, inp.quant);
-    const wB = weightBytes(G, inp.quant);
-    T.push({ g: 'Memory', k: 'Weights', f: `${fmtP(G.P)} params × ${q.bpw} bits ÷ 8${q.emb16 && G.embedParams ? ` (embeddings ${fmtP(G.embedParams)} kept at 16-bit)` : ''}${G.unread ? ` + ${fmtP(G.unread)} vision / lookup params at ${q.bpw >= 16 ? q.bpw : 16}-bit (loaded, not read per token)` : ''}`, v: gib(wB) });
+    const kept = fp16KeptParams(G, inp.quant, rtKey);
+    const wB = weightBytes(G, inp.quant, rtKey);
+    const effBpw = rtKey === 'mlx' && inp.quant === 'int4' ? 4.5 : q.bpw;
+    T.push({ g: 'Memory', k: 'Weights', f: `${fmtP(G.P)} params × ${effBpw} bits ÷ 8${kept.emb ? ` (embeddings ${fmtP(kept.emb)}${kept.attn ? ` + attention ${fmtP(kept.attn)}` : ''} kept at 16-bit)` : ''}${kept.excessGgufEmb ? ` (+ Q8_0 large-vocab embedding adjustment)` : ''}${G.unread ? ` + ${fmtP(G.unread)} vision / lookup params at ${q.bpw >= 16 ? q.bpw : 16}-bit (loaded, not read per token)` : ''}`, v: gib(wB) });
 
     // ---- KV cache ----
     const K = kvLayout(m, G);
-    const kvPerTok = (K.full + K.swa) * K.elems * kvB + (K.full + K.swa) * K.indexer;
+    const kvPerTok = K.full * (K.fullElems * kvB + K.indexer) + K.swa * (K.elems * kvB + K.indexer);
     const kvSeq = kvBytesSeq(K, seq, kvB);
-    const kvRep = kvBytesGroup(K, seq, sharedTok, sRep, kvB);
+    const kvRepObj = kvBytesReplica(K, promptTok, outTok, uRep, batch, sharedTok, kvB);
+    const kvRep = kvRepObj.total;
     // Exact cluster total across replicas (handles uneven user splits across DP replicas)
     const qU = Math.floor(users / replicas), rU = users % replicas;
-    const kvForU = (u) => u <= 0 ? 0 : kvBytesGroup(K, seq, u > 1 ? Math.round(promptTok * clamp(inp.prefixShare, 0, 1)) : 0, u * batch, kvB);
+    const kvForU = (u) => u <= 0 ? 0 : kvBytesReplica(K, promptTok, outTok, u, batch, u > 1 ? Math.round(promptTok * clamp(inp.prefixShare, 0, 1)) : 0, kvB).total;
     const kvTotal = rU * kvForU(qU + 1) + (replicas - rU) * kvForU(qU);
-    T.push({ g: 'Memory', k: 'KV cache / token', f: `${K.full + K.swa} attention layers × (${K.kind}) × ${kvB} B${K.indexer ? ` + indexer ${K.indexer} B/layer` : ''}`, v: `${fmtBytes(kvPerTok)}` });
+    T.push({ g: 'Memory', k: 'KV cache / token', f: `${K.full + K.swa} attention layers × (${K.kind}) × ${kvB} B${K.indexer ? ` + indexer ${K.indexer.toFixed(K.indexer < 10 ? 1 : 0)} B/layer` : ''}`, v: `${fmtBytes(kvPerTok)}` });
     if (K.swa) T.push({ g: 'Memory', k: 'Sliding window', f: `${K.swa} of ${K.full + K.swa} layers keep only the last ${K.window.toLocaleString()} tokens`, v: '' });
     if (K.lin) T.push({ g: 'Memory', k: 'Linear attention', f: `${K.lin} layers keep a fixed state: ${K.linKind}`, v: fmtBytes(K.lin * K.linState) + ' / seq' });
-    T.push({ g: 'Memory', k: 'KV cache', f: `${fmtBytes(kvSeq)} per ${seq.toLocaleString()}-token sequence × ${sRep} seq/replica${replicas > 1 ? ` (${replicas} replicas)` : ''}${sharedTok ? `, ${sharedTok.toLocaleString()} shared prompt tok cached once` : ''}`, v: gib(kvTotal) });
+    T.push({ g: 'Memory', k: 'KV cache', f: `${fmtBytes(kvSeq)} per ${seq.toLocaleString()}-token sequence × ${uRep} user${uRep > 1 ? 's' : ''}${batch > 1 ? ` × ${batch} samples (prompt shared per request)` : ''}${replicas > 1 ? ` (${replicas} replicas)` : ''}${sharedTok ? `, ${sharedTok.toLocaleString()} shared prompt tok cached once` : ''}`, v: gib(kvTotal) });
 
     // ---- activations (peak during chunked prefill) + logits ----
-    const chunkTok = Math.min(promptTok * batch, R.chunk);
+    // A request prefills its prompt once even when generating `batch` parallel completions (n).
+    const chunkTok = Math.min(promptTok, R.chunk);
     const prefillActB = chunkTok * (4 * G.h + 3 * G.ffnActive) * 2;
     const logitsActB = sRep * (G.V || 32000) * 4;
     const actRep = prefillActB + logitsActB;
@@ -347,9 +410,9 @@
     let draftB = 0, draftKvRep = 0;
     const draftP = inp.spec ? Math.min(inp.specDraft, G.P / 1e9) * 1e9 : 0;
     if (inp.spec) {
-      draftB = draftP * q.bpw / 8;
+      draftB = draftP * effBpw / 8;
       draftKvRep = kvRep * (draftP / G.P);
-      T.push({ g: 'Memory', k: 'Draft model', f: `${fmtP(draftP)} × ${q.bpw} bits ÷ 8 + KV ≈ target KV × ${(draftP / G.P).toFixed(3)}`, v: gib(draftB + draftKvRep) });
+      T.push({ g: 'Memory', k: 'Draft model', f: `${fmtP(draftP)} × ${effBpw} bits ÷ 8 + KV ≈ target KV × ${(draftP / G.P).toFixed(3)}`, v: gib(draftB + draftKvRep) });
     }
 
     // ---- offloading ----
@@ -360,17 +423,20 @@
 
     // ---- per-GPU split ----
     // TP shards weights and KV heads (KV replicated when tp > kv heads; MLA latent is replicated on every TP rank).
-    const kvShard = G.mla ? 1 : Math.min(Lyt.tp, G.kvh);
+    const kvShardSwa = G.mla ? 1 : Math.min(Lyt.tp, G.kvh);
+    const kvShardFull = G.mla ? 1 : Math.min(Lyt.tp, K.globalKvh || G.kvh);
+    const kvShard = kvShardFull;
     const wGpu = (wB - offW) / shards;
-    const kvGpu = offKvFlag ? 0 : kvRep / (kvShard * Lyt.pp);
+    const kvGpuFrom = (obj) => (obj.fullPart / kvShardFull + obj.swaPart / kvShardSwa + obj.linPart / Lyt.tp) / Lyt.pp;
+    const kvGpu = offKvFlag ? 0 : kvGpuFrom(kvRepObj);
     const actGpu = actRep / Lyt.tp;
-    const draftGpu = inp.spec ? draftB / shards + (offKvFlag ? 0 : draftKvRep / (kvShard * Lyt.pp)) : 0;
+    const draftGpu = inp.spec ? draftB / shards + (offKvFlag ? 0 : draftKvRep / (kvShardSwa * Lyt.pp)) : 0;
     const dyn = kvGpu + actGpu;
     const fragGpu = dyn * R.frag;
     const ctxGpu = R.ctxGiB * GiB;
     const graphGpu = R.graphGiB * GiB;
     const commGpu = Lyt.n > 1 ? 0.25 * GiB : 0; // NCCL buffers
-    if (Lyt.tp > G.kvh && !G.mla) W.push(`TP degree ${Lyt.tp} exceeds the model's ${G.kvh} KV heads — KV heads are replicated, so KV memory does not shrink past ${G.kvh}-way.`);
+    if (Lyt.tp > Math.min(G.kvh, K.globalKvh || G.kvh) && !G.mla) W.push(`TP degree ${Lyt.tp} exceeds the model's ${Math.min(G.kvh, K.globalKvh || G.kvh)} KV heads — KV heads are replicated on layers with fewer heads.`);
     if (Lyt.tp > 1 && G.mla) W.push('MLA latent KV is replicated on every tensor-parallel rank (it cannot be split by head).');
 
     const segsGpu = [
@@ -392,37 +458,73 @@
     T.push({ g: 'Memory', k: 'Per-GPU usage', f: `sum of the rows above ÷ ${usable.v.toFixed(1)} GiB usable (${usable.note})`, v: `${gib(perGpu)} (${pct.toFixed(1)}%)` });
 
     // ---- decode step time ----
-    const avgCtx = promptTok + outTok / 2;
+    const avgOut = outTok / 2;
+    const avgCtx = promptTok + avgOut;
     const embInShared = Math.min(G.embedParams, G.shared);
-    const inEmb = G.tied ? 0 : Math.min(G.V * G.h, embInShared) * (q.emb16 ? 2 : q.bpw / 8); // untied input table: only looked up, never read in full
-    // Weights read per step. Dense: text weights minus untied input embeddings (never unread vision / lookup tables).
-    // MoE: shared part (attention, norms, router, shared experts, lm_head) + the routed experts that at least
-    // one of the sRep tokens selected: E[touched] = routed × (1 − (1 − k/E)^sRep).
-    const embB = embInShared * (q.emb16 ? 2 : q.bpw / 8);
-    const sharedB = Math.max(0, G.shared - embInShared) * q.bpw / 8 + embB - inEmb;
-    const touchFrac = G.moe ? 1 - Math.pow(1 - G.f, sRep) : 1;
-    const routedB = G.routed * q.bpw / 8 * touchFrac;
-    const MOE_KERNEL_EFF = 0.75;                               // fused-MoE GEMVs reach ~75% of dense-GEMV bandwidth
+    const embRate = kept.emb ? 2 : effBpw / 8;
+    const inEmb = G.tied ? 0 : Math.min(G.V * G.h, embInShared) * embRate; // untied input table: only looked up, never read in full
+    const embB = embInShared * embRate + kept.excessGgufEmb * (8.5 - q.bpw) / 8;
+    // Attention projections kept at 16-bit (e.g. MoE MXFP4/NVFP4) are always 100% active on every decode token.
+    const attn16Extra = kept.attn * Math.max(0, 2 - effBpw / 8);
+    const sharedB = Math.max(0, G.shared - embInShared) * effBpw / 8 + embB - inEmb + attn16Extra;
+    const MOE_KERNEL_EFF = 0.75; // fused-MoE GEMVs reach ~75% of dense-GEMV bandwidth
+    const expertSlice = G.moe ? (m.moe_ffn_intermediate_size || G.ffn) / Lyt.tp : G.ffn;
+    const sliceEffBase = G.moe && Lyt.tp > 1 && expertSlice < 1024 ? clamp(0.32 + 0.68 * (expertSlice / 1024), 0.32, 1) : 1;
+
+    // Pipeline parallelism micro-batching: with sRep > 1, up to min(PP, sRep) micro-batches circulate across PP stages.
+    const ppM = Lyt.pp > 1 ? Math.min(Lyt.pp, sRep) : 1;
+    const sMicro = sRep / ppM;
+    const uMicro = uRep / ppM;
+    const ppEff = ppM > 1 ? 0.92 : 1;
+
+    const moeEffFor = (nTok) => MOE_KERNEL_EFF * (sliceEffBase + (1 - sliceEffBase) * Math.min(1, Math.max(0, nTok - 1) / 31));
+    const moeEff = moeEffFor(sMicro);
+    const touchFrac = G.moe ? 1 - Math.pow(1 - G.f, sMicro) : 1;
+    const routedB = G.routed * effBpw / 8 * touchFrac;
     const wRead = G.moe ? sharedB + routedB : Math.max(0, wB - ub - inEmb);
-    const wReadEff = G.moe ? sharedB + routedB / MOE_KERNEL_EFF : wRead; // bandwidth-equivalent bytes
-    const kvRead = kvBytesGroup(K, avgCtx, Math.min(sharedTok, avgCtx), sRep, kvB);
+    const wReadEff = G.moe ? sharedB + routedB / moeEff : wRead; // bandwidth-equivalent bytes
+
+    // KV bytes read per micro-batch decode step. DSA/CSA2 sparse attention reads full indexer + top-k (2048) latent tokens.
+    const kvReadFor = (uCount, nBatch) => {
+      const shAvg = uCount > 1 ? Math.min(sharedTok, promptTok) : 0;
+      const obj = kvBytesReplica(K, promptTok, avgOut, uCount, nBatch, shAvg, kvB);
+      if ((G.att === 'dsa' || G.att === 'csa2') && avgCtx > 2048) {
+        const topK = 2048;
+        const fullTok = shAvg + uCount * (promptTok - shAvg) + uCount * nBatch * avgOut;
+        const sparseTok = Math.min(topK, avgCtx) * uCount * nBatch;
+        const fEl = K.fullElems ?? K.elems;
+        const fullPart = K.full * (sparseTok * fEl * kvB + fullTok * K.indexer);
+        return { total: fullPart + obj.swaPart + obj.linPart, fullPart, swaPart: obj.swaPart, linPart: obj.linPart };
+      }
+      return obj;
+    };
+    const kvReadObj = kvReadFor(uMicro, batch);
+    const kvRead = kvReadObj.total;
+    const kvReadGpu = offKvFlag ? 0 : (kvReadObj.fullPart / kvShardFull + kvReadObj.swaPart / kvShardSwa + kvReadObj.linPart / Lyt.tp);
     const gpuW = wReadEff * (1 - offFrac);
-    const tMem = (gpuW / Lyt.tp + (offKvFlag ? 0 : kvRead / kvShard)) / (bw * bwEff);
-    const flopsTok = 2 * (G.moe ? G.A : G.P) + 4 * (K.fullAttn * avgCtx + K.swaAttn * Math.min(avgCtx, K.window || avgCtx)) * G.heads * G.hd;
-    // W8A8 FP8 and W4A4 NVFP4 checkpoints run their GEMMs on low-precision tensor cores (dense rates vs BF16).
-    const lowP = lowPrecisionX(q, g);
-    const tComp = (flopsTok * sRep) / (tfl.v * lowP.x * 1e12 * Lyt.tp * 0.5);
-    const tFixed = (R.stepMs + G.L * R.layerUs * (G.moe ? 2.5 : 1) / 1000) / 1000; // MoE layers launch ~2.5× more kernels (router, top-k, permute)
+    // Per-stage time (divided by Lyt.pp; when Lyt.pp = 1 this is the full model step).
+    const tMemStage = (gpuW / (Lyt.tp * Lyt.pp) + kvReadGpu / Lyt.pp) / (bw * bwEff);
+    const sparseAttnCtx = (G.att === 'dsa' || G.att === 'csa2') ? Math.min(avgCtx, 2048) : avgCtx;
+    const flopsTok = 2 * (G.moe ? G.A : G.P) + 4 * (K.fullAttn * sparseAttnCtx + K.swaAttn * Math.min(avgCtx, K.window || avgCtx)) * G.heads * G.hd;
+    const lowP = lowPrecisionX(q, g, rtKey);
+    // TP > 1 incurs small-GEMM slicing / sync efficiency loss (~2% per doubling of TP).
+    const tpCompEff = Lyt.tp > 1 ? 1 / (1 + 0.04 * Math.log2(Lyt.tp)) : 1;
+    const tCompStage = (flopsTok * sMicro / Lyt.pp) / (tfl.v * lowP.x * 1e12 * Lyt.tp * tpCompEff * 0.5);
+    // Per-layer launch/dispatch overhead: MoE launches router+top-k+permute+grouped-GEMM; multi-GPU MoE + MLA add dispatch/combine sync.
+    const moeMult = G.moe ? (Lyt.tp > 1 ? (G.mla ? 36 : 5.5) : 2.5) : 1;
+    const layerUsEff = R.layerUs * moeMult;
+    const tFixedStage = (R.stepMs / Lyt.pp + (G.L / Lyt.pp) * layerUsEff / 1000) / 1000;
     const tpLink = LINKS[inp.cluster && Lyt.tp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
     const ppLink = LINKS[inp.cluster && Lyt.tp * Lyt.pp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
-    const commFor = (tokensPerRank) => {
-      let c = 0;
+    // NCCL AllReduce achieves ~70% of unidirectional link peak on multi-GPU collectives.
+    const tpCommStageFor = (tokensPerRank, layersInStage) => {
+      if (Lyt.tp <= 1) return 0;
       const msg = tokensPerRank * G.h * 2;
-      if (Lyt.tp > 1) c += 2 * G.L * (tpLink.lat * 1e-6 + 2 * (Lyt.tp - 1) / Lyt.tp * msg / (tpLink.bw * 1e9));
-      if (Lyt.pp > 1) c += (Lyt.pp - 1) * (ppLink.lat * 1e-6 + msg / (ppLink.bw * 1e9));
-      return c;
+      const allReducePerLayer = G.moe ? 2 : 2;
+      return allReducePerLayer * layersInStage * (tpLink.lat * 1e-6 + 2 * (Lyt.tp - 1) / Lyt.tp * msg / (tpLink.bw * 0.70 * 1e9));
     };
-    const tComm = commFor(sRep);
+    const ppHopFor = (tokensPerRank) => Lyt.pp > 1 ? (ppLink.lat * 1e-6 + tokensPerRank * G.h * 2 / (ppLink.bw * 1e9)) : 0;
+    const tCommStage = tpCommStageFor(sMicro, G.L / Lyt.pp) + (Lyt.pp > 1 ? ((Lyt.pp - 1) / Lyt.pp) * ppHopFor(sMicro) : 0);
     const offTarget = OFFLOAD[inp.offloadTarget] || OFFLOAD.cpu_ram;
     // llama.cpp/Ollama run offloaded layers on the CPU at system-RAM speed; other runtimes stream them over PCIe.
     const cpuRun = (rtKey === 'llamacpp' || rtKey === 'ollama') && inp.offloadTarget === 'cpu_ram';
@@ -433,28 +535,79 @@
       T.push({ g: 'Speed', k: 'Offloaded layers', f: `${fmtBytes(wRead * offFrac)} read per token from ${offTarget.label} at ${offBw} GB/s${cpuRun ? ' (CPU executes these layers)' : ' (streamed to the GPU)'}`, v: ms(tOff) });
     }
     if (offKvFlag) tOff += kvRead / (PCIE_HOST_BW * 1e9);
-    const tStep = Math.max(tMem, tComp) + tFixed + tComm + tOff;
-    T.push({ g: 'Speed', k: 'Bytes read per step', f: `${G.moe ? `weights: shared ${fmtBytes(sharedB)} + routed ${fmtBytes(G.routed * q.bpw / 8)} × (1 − (1 − ${G.f.toFixed(3)})^${sRep}) [MoE kernels at ${0.75 * 100}% eff.] = ` : 'weights '}${fmtBytes(wRead)} + KV at avg context ${Math.round(avgCtx).toLocaleString()} × ${sRep} seq ${fmtBytes(kvRead)}`, v: fmtBytes(wRead + kvRead) });
-    T.push({ g: 'Speed', k: 'Memory time', f: `(weights ÷ ${Lyt.tp} + KV ÷ ${kvShard}) ÷ (${g.bandwidth_gbs} GB/s × ${bwEff.toFixed(2)} efficiency (${R.label} ${R.bwEff}${dBw.v < 1 ? ` × device ${dBw.v}` : ''}))`, v: ms(tMem) });
-    T.push({ g: 'Speed', k: 'Compute time', f: `${(flopsTok / 1e9).toFixed(1)} GFLOP/token × ${sRep} ÷ (${tfl.v.toFixed(1)} TFLOPS${lowP.x > 1 ? ` × ${lowP.x} ${lowP.label}` : ''} × 0.5)  — ${tfl.note}`, v: ms(tComp) });
-    T.push({ g: 'Speed', k: 'Fixed overhead', f: `${R.stepMs} ms/step + ${G.L} layers × ${R.layerUs * (G.moe ? 2.5 : 1)} µs${tComm ? ` + interconnect ${ms(tComm)}` : ''}`, v: ms(tFixed + tComm) });
-    T.push({ g: 'Speed', k: 'Decode step', f: 'max(memory, compute) + fixed + interconnect + offload', v: ms(tStep) });
+    const tStage = Math.max(tMemStage, tCompStage) + tFixedStage + tCommStage + tOff / Lyt.pp;
+    // Full per-sequence decode step time: traverses Lyt.pp stages (with ppEff steady-state pipeline efficiency when ppM > 1).
+    const tMem = tMemStage * Lyt.pp;
+    const tComp = tCompStage * Lyt.pp;
+    const tFixed = tFixedStage * Lyt.pp;
+    const tComm = tCommStage * Lyt.pp;
+    const tStepDecode = (tStage * Lyt.pp) / ppEff;
+    T.push({ g: 'Speed', k: 'Bytes read per step', f: `${G.moe ? `weights: shared ${fmtBytes(sharedB)} + routed ${fmtBytes(G.routed * effBpw / 8)} × (1 − (1 − ${G.f.toFixed(3)})^${sMicro.toFixed(sMicro % 1 ? 1 : 0)}) [MoE kernels at ${Math.round(moeEff * 100)}% eff.] = ` : 'weights '}${fmtBytes(wRead)} + KV at avg context ${Math.round(avgCtx).toLocaleString()} × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} seq ${fmtBytes(kvRead)}`, v: fmtBytes(wRead + kvRead) });
+    T.push({ g: 'Speed', k: 'Memory time', f: `(weights ÷ ${Lyt.tp} + KV ÷ ${kvShard}) ÷ (${g.bandwidth_gbs} GB/s × ${bwEff.toFixed(2)} efficiency (${R.label} ${R.bwEff}${dBw.v < 1 ? ` × device ${dBw.v}` : ''}${dcGgufBw < 1 ? ` × DC ${dcGgufBw}` : ''}))`, v: ms(tMem) });
+    T.push({ g: 'Speed', k: 'Compute time', f: `${(flopsTok / 1e9).toFixed(1)} GFLOP/token × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} ÷ (${tfl.v.toFixed(1)} TFLOPS${lowP.x > 1 ? ` × ${lowP.x} ${lowP.label}` : ''} × 0.5)  — ${tfl.note}`, v: ms(tComp) });
+    T.push({ g: 'Speed', k: 'Fixed overhead', f: `${R.stepMs} ms/step + ${G.L} layers × ${layerUsEff.toFixed(0)} µs${tComm ? ` + interconnect ${ms(tComm)}` : ''}${ppM > 1 ? ` (${ppM} pipelined stages)` : ''}`, v: ms(tFixed + tComm) });
+
+    // ---- prefill / TTFT (prompt is prefilled once per request even when batch n > 1) ----
+    const pfTok = promptTok;
+    const fp8x = lowP.x;
+    // llama.cpp/Ollama prefill uses FP16-acc/MMQ on consumer GeForce (2× halved FP32-acc rate), NOT on datacenter GPUs.
+    const ggufPath = q.gguf && (rtKey === 'llamacpp' || rtKey === 'ollama');
+    const consumerNv = g.vendor === 'nvidia' && (isGeForceFp16Acc(g) || /^4090/.test(g.key));
+    const int8x = g.int8_tensor === false ? 1 : (consumerNv ? 2 : 1);
+    const pfTfl = ggufPath && !isApple(g) ? tfl.v * int8x : tfl.v * fp8x;
+    const pfEff = isApple(g) ? 0.68 : (ggufPath && g.category === 'datacenter' ? 0.18 : R.pfEff);
+    const prefillTimeFor = (toks, pipelined) => {
+      if (toks <= 0) return 0;
+      const swaP = K.window && toks > K.window ? K.window * (toks - K.window / 2) : toks * toks / 2;
+      const attnP = 4 * (K.fullAttn * toks * toks / 2 + K.swaAttn * swaP) * G.heads * G.hd;
+      const flopsP = 2 * (G.moe ? G.A : G.P) * toks + attnP;
+      const pfCompAll = flopsP / (pfTfl * 1e12 * pfEff * Lyt.tp * tpCompEff);
+      const cTok = Math.min(R.chunk, toks);
+      const nChunks = Math.ceil(toks / cTok);
+      const pfW = Math.max(0, wB - ub);
+      const pfMemAll = nChunks * (pfW * (1 - offFrac)) / Lyt.tp / (bw * bwEff);
+      const pfOffAll = offFrac > 0 ? nChunks * pfW * offFrac / (offBw * 1e9) : 0;
+      const pfCommAll = nChunks * (tpCommStageFor(cTok, G.L) + (Lyt.pp > 1 ? (Lyt.pp - 1) * ppHopFor(cTok) : 0));
+      const pfFixedAll = nChunks * (G.L * R.layerUs * 1e-6) + pfCommAll;
+      const seqTime = Math.max(pfCompAll, pfMemAll) + pfOffAll + pfFixedAll;
+      if (Lyt.pp <= 1) return seqTime;
+      // Under PP: a single request can pipeline its chunks across stages ((nChunks + PP - 1) / (nChunks * PP));
+      // steady-state multi-user prefill pipelines different prompts across all PP stages (1 / (PP * 0.92)).
+      if (pipelined) return seqTime / (Lyt.pp * 0.92);
+      return seqTime * (nChunks + Lyt.pp - 1) / (nChunks * Lyt.pp);
+    };
+    const swaPairs = K.window && pfTok > K.window ? K.window * (pfTok - K.window / 2) : pfTok * pfTok / 2;
+    const attnPf = 4 * (K.fullAttn * pfTok * pfTok / 2 + K.swaAttn * swaPairs) * G.heads * G.hd;
+    const pfFlops = 2 * (G.moe ? G.A : G.P) * pfTok + attnPf;
+    const pfChunkTok = Math.min(R.chunk, pfTok);
+    const chunks = Math.ceil(pfTok / pfChunkTok);
+    const tPrefill = prefillTimeFor(pfTok, false);
+
+    // Continuous batching with multiple users: steady-state decode steps share GPU time with incoming uncached prompt prefills.
+    const uncachedPrompt = Math.max(0, promptTok - sharedTok);
+    const tPrefillAmort = uRep > 1 && uncachedPrompt > 0
+      ? (uRep / outTok) * prefillTimeFor(uncachedPrompt, true)
+      : 0;
+    const tStep = tStepDecode + tPrefillAmort;
+    T.push({ g: 'Speed', k: 'Decode step', f: `max(memory, compute) + fixed + interconnect + offload${tPrefillAmort ? ` + amortized prefill ${ms(tPrefillAmort)}` : ''}`, v: ms(tStep) });
 
     // speculative decoding
     let perSeqTps = 1 / tStep, specInfo = null;
     if (inp.spec) {
       const a = clamp(inp.specAccept, 0.01, 0.999), k = inp.specTokens;
       const E = (1 - Math.pow(a, k + 1)) / (1 - a);
-      const draftKvRead = kvRead * (draftP / G.P);
-      const tDraft = (draftB / Lyt.tp + (offKvFlag ? 0 : draftKvRead / kvShard)) / (bw * bwEff) + R.stepMs / 2000 + 0.0002;
+      const draftKvRead = kvReadGpu * (draftP / G.P);
+      const tDraft = (draftB / (Lyt.tp * Lyt.pp) + draftKvRead / Lyt.pp) / (bw * bwEff) * Lyt.pp / ppEff + R.stepMs / 2000 + 0.0002;
       // Verifying k+1 tokens activates more MoE experts per step and sends (k+1)× larger TP messages.
-      const vTouch = G.moe ? 1 - Math.pow(1 - G.f, sRep * (k + 1)) : 1;
-      const vRoutedB = G.routed * q.bpw / 8 * vTouch;
+      const vTok = sMicro * (k + 1);
+      const vTouch = G.moe ? 1 - Math.pow(1 - G.f, vTok) : 1;
+      const vRoutedB = G.routed * effBpw / 8 * vTouch;
       const vWRead = G.moe ? sharedB + vRoutedB : wRead;
-      const vWReadEff = G.moe ? sharedB + vRoutedB / MOE_KERNEL_EFF : wRead;
-      const vTMem = (vWReadEff * (1 - offFrac) / Lyt.tp + (offKvFlag ? 0 : kvRead / kvShard)) / (bw * bwEff);
+      const vWReadEff = G.moe ? sharedB + vRoutedB / moeEffFor(vTok) : wRead;
+      const vTMemStage = (vWReadEff * (1 - offFrac) / (Lyt.tp * Lyt.pp) + kvReadGpu / Lyt.pp) / (bw * bwEff);
       const vTOff = (offFrac > 0 ? vWRead * offFrac / (offBw * 1e9) : 0) + (offKvFlag ? kvRead / (PCIE_HOST_BW * 1e9) : 0);
-      const tVerify = Math.max(vTMem, tComp * (k + 1)) + tFixed + commFor(sRep * (k + 1)) + vTOff;
+      const vTCommStage = tpCommStageFor(vTok, G.L / Lyt.pp) + (Lyt.pp > 1 ? ((Lyt.pp - 1) / Lyt.pp) * ppHopFor(vTok) : 0);
+      const tVerify = (Math.max(vTMemStage, tCompStage * (k + 1)) + tFixedStage + vTCommStage + vTOff / Lyt.pp) * Lyt.pp / ppEff + tPrefillAmort;
       const tCycle = (inp.specType === 'parallel' ? tDraft : k * tDraft) + tVerify;
       perSeqTps = E / tCycle;
       specInfo = { E, tDraft, tVerify, tCycle, speedup: perSeqTps * tStep };
@@ -462,33 +615,13 @@
     }
     const throughput = perSeqTps * S;
 
-    // ---- prefill / TTFT (single request: `batch` prompts of promptTok tokens) ----
-    const pfTok = promptTok * batch;
-    const fp8x = lowP.x;
-    // llama.cpp/Ollama prefill on quantized weights uses INT8 / FP16-acc MMQ kernels (≈2× effective BF16 rate on NVIDIA/AMD DC).
-    const ggufPath = q.gguf && (rtKey === 'llamacpp' || rtKey === 'ollama');
-    const int8x = g.int8_tensor === false ? 1 : (g.vendor === 'nvidia' || g.category === 'datacenter' ? 2 : 1); // B300/Rubin cut INT8 tensor throughput
-    const pfTfl = ggufPath && !isApple(g) ? tfl.v * int8x : tfl.v * fp8x;
-    const pfEff = isApple(g) ? 0.68 : R.pfEff;
-    const swaPairs = K.window && promptTok > K.window ? K.window * (promptTok - K.window / 2) : promptTok * promptTok / 2;
-    const attnPf = 4 * (K.fullAttn * promptTok * promptTok / 2 + K.swaAttn * swaPairs) * G.heads * G.hd * batch;
-    const pfFlops = 2 * (G.moe ? G.A : G.P) * pfTok + attnPf;
-    const pfComp = pfFlops / (pfTfl * 1e12 * pfEff * Lyt.tp);
-    const pfChunkTok = Math.min(R.chunk, pfTok);
-    const chunks = Math.ceil(pfTok / pfChunkTok);
-    const pfW = Math.max(0, wB - ub);
-    const pfMem = chunks * (pfW * (1 - offFrac)) / Lyt.tp / (bw * bwEff);
-    const pfOff = offFrac > 0 ? chunks * pfW * offFrac / (offBw * 1e9) : 0;
-    const pfComm = commFor(pfChunkTok);
-    const pfFixed = chunks * (G.L * R.layerUs * 1e-6 + pfComm);
-    const tPrefill = Math.max(pfComp, pfMem) + pfOff + pfFixed;
-    const ttft = tPrefill + tStep;
+    const ttft = tPrefill + tStepDecode;
     T.push({ g: 'Speed', k: 'Prefill FLOPs', f: `2 × ${fmtP(G.moe ? G.A : G.P)} ${G.moe ? 'active ' : ''}params × ${pfTok.toLocaleString()} prompt tokens + causal attention`, v: `${(pfFlops / 1e12).toFixed(2)} TFLOP` });
-    T.push({ g: 'Speed', k: 'Time to first token', f: `max(FLOPs ÷ (${pfTfl.toFixed(1)} TFLOPS${ggufPath && !isApple(g) ? (int8x > 1 ? ' (INT8 MMQ)' : ' (MMQ, no INT8 boost)') : fp8x > 1 ? ` (${lowP.label})` : ''} × ${pfEff}${Lyt.tp > 1 ? ` × ${Lyt.tp}` : ''}), ${chunks} chunk weight reads)${pfOff ? ' + offload streaming' : ''} + first decode step`, v: ms(ttft) });
-    const ttftQueued = uRep > 1 ? tPrefill * uRep + tStep : ttft;
+    T.push({ g: 'Speed', k: 'Time to first token', f: `max(FLOPs ÷ (${pfTfl.toFixed(1)} TFLOPS${ggufPath && !isApple(g) ? (int8x > 1 ? ' (INT8 MMQ)' : ' (MMQ, no INT8 boost)') : fp8x > 1 ? ` (${lowP.label})` : ''} × ${pfEff}${Lyt.tp > 1 ? ` × ${Lyt.tp}` : ''}), ${chunks} chunk weight reads)${offFrac > 0 ? ' + offload streaming' : ''} + first decode step`, v: ms(ttft) });
+    const ttftQueued = uRep > 1 ? prefillTimeFor(pfTok, true) * uRep + tStepDecode : ttft;
 
     // ---- power ----
-    const uMem = Math.min(1, (tMem / tStep) * bwEff), uComp = Math.min(1, (tComp / tStep) * 0.5);
+    const uMem = Math.min(1, (tMem / tStepDecode) * bwEff), uComp = Math.min(1, (tComp / tStepDecode) * 0.5);
     const watts = g.tdp_watts * Math.min(1, 0.2 + 0.5 * uMem + 0.8 * uComp) * Lyt.n;
     T.push({ g: 'Power', k: 'Power draw', f: `${Lyt.n} × TDP ${g.tdp_watts} W × (0.2 idle + 0.5 × memory-busy ${uMem.toFixed(2)} + 0.8 × compute-busy ${uComp.toFixed(2)})`, v: `${Math.round(watts)} W` });
 
@@ -498,10 +631,13 @@
     if (rtKey === 'mlx' && !isApple(g)) W.push('MLX only runs on Apple Silicon.');
     if (q.fp8 && !supportsFp8(g)) W.push(`${g.label} has no FP8 tensor cores: FP8 weights save memory but compute runs at FP16 speed (weight-only).`);
     if (inp.quant === 'nvfp4' && !isBlackwell(g)) W.push('NVFP4 is accelerated only on Blackwell; elsewhere it is dequantized to FP16 on the fly.');
+    if (inp.quant === 'mxfp4' && !supportsMxfp4(g)) W.push('MXFP4 is accelerated only on Blackwell and AMD MI350X/MI355X; elsewhere it is dequantized on the fly.');
 
     const status = statusFor(pct);
     const fits = pct <= 100;
-    const perUserKv = Math.max(0, kvBytesSeq(K, seq, kvB) - (sharedTok ? (kvBytesSeq(K, seq, kvB) * 2 - kvBytesGroup(K, seq, sharedTok, 2, kvB)) : 0)) * batch;
+    const kvOneUser = kvBytesReplica(K, promptTok, outTok, 1, batch, 0, kvB).total;
+    const kvTwoUsers = kvBytesReplica(K, promptTok, outTok, 2, batch, sharedTok, kvB).total;
+    const perUserKv = Math.max(0, kvTwoUsers - kvOneUser);
     return {
       mode: 'inference', runtime: rtKey, runtimeLabel: R.label, layout: Lyt, status,
       memory: {
@@ -556,7 +692,10 @@
       trainable = inp.loraRank * perLayer * G.L;
       wLabel = `${fmtP(P)} × ${method === 'qlora' ? '4.127 bits ÷ 8 (NF4 + double-quant)' : '2 B (frozen BF16)'}`;
     }
-    const weights = P * wBpp + G.unread * 2;                                        // vision tower / lookup tables stay frozen in BF16
+    // QLoRA keeps embeddings & lm_head in BF16 (2 B/param) while quantizing linear layers to NF4.
+    const qloraEmb = method === 'qlora' ? Math.min(G.embedParams, P) : 0;
+    const weights = (P - qloraEmb) * wBpp + qloraEmb * 2 + G.unread * 2;             // vision tower / lookup tables stay frozen in BF16
+    if (qloraEmb) wLabel += ` (embeddings ${fmtP(qloraEmb)} kept in BF16)`;
     if (G.unread) wLabel += ` + ${fmtP(G.unread)} frozen vision / lookup params × 2 B`;
     T.push({ g: 'Memory', k: 'Model weights', f: wLabel, v: gib(weights) });
     if (method !== 'full') T.push({ g: 'Memory', k: 'LoRA parameters', f: `r ${inp.loraRank} × Σ(d_in + d_out) over q,k,v,o,gate,up,down × ${G.L} layers`, v: fmtP(trainable) });
@@ -578,9 +717,10 @@
     const shard = (x, stage) => (zero >= stage ? x / N : x);
     let wGpu = shard(weights, 3), gGpu = shard(grads, 2), oGpu = shard(optim + master, 1);
     const loraGpu = shard(loraParamB, 3);
-    const offOpt = Boolean(o.offload_optimizer && zero >= 1);
-    const offGrad = Boolean(o.offload_gradients && zero >= 2);
-    const offParam = Boolean(o.offload_param && zero >= 3);
+    // CPU offloading works on a single GPU (DeepSpeed ZeRO-Offload / PyTorch CPU offload) as well as multi-GPU ZeRO.
+    const offOpt = Boolean(o.offload_optimizer && (N === 1 || zero >= 1));
+    const offGrad = Boolean(o.offload_gradients && (N === 1 || zero >= 2));
+    const offParam = Boolean(o.offload_param && (N === 1 || zero >= 3));
     const off = [];
     if (offOpt) { off.push(['Optimizer states', optim + master]); oGpu = 0; }
     if (offGrad) { off.push(['Gradients', grads]); gGpu = 0; }
@@ -601,12 +741,17 @@
     const actFull = tokens * (perTokLayer + attnScores) * fullLayers;
     const actCk = tokens * G.h * 2 * G.L * ck + (ck > 0 ? tokens * (perTokLayer + attnScores) : 0);
     let act = actFull + actCk;
-    const logits = tokens * (G.V || 32000) * 4 * 2;                                  // fp32 logits + their gradient
+    // Fused / chunked cross-entropy (Liger / Unsloth) avoids materializing the full [tokens × vocab] fp32 logits tensor.
+    const logitsTok = o.fused_cross_entropy ? Math.min(tokens, 256) : tokens;
+    const logits = logitsTok * (G.V || 32000) * 4 * 2;                               // fp32 logits + their gradient
     if (o.activation_offloading) act = act * 0.15;
     T.push({ g: 'Memory', k: 'Activations', f: `${tokens.toLocaleString()} tokens × (7h + 2·kv + 4·ffn) × 2 B × ${fullLayers.toFixed(0)} layers${ck ? ` + checkpoints h × 2 B × ${Math.round(G.L * ck)} layers` : ''}${o.activation_offloading ? ' × 0.15 (offloaded)' : ''}`, v: gib(act) });
-    T.push({ g: 'Memory', k: 'Logits', f: `${tokens.toLocaleString()} × vocab ${(G.V || 32000).toLocaleString()} × 4 B × 2 (value + grad)`, v: gib(logits) });
+    T.push({ g: 'Memory', k: 'Logits', f: `${logitsTok.toLocaleString()}${o.fused_cross_entropy ? ' (chunked fused CE)' : ''} × vocab ${(G.V || 32000).toLocaleString()} × 4 B × 2 (value + grad)`, v: gib(logits) });
 
-    const ctx = (isApple(g) ? 0.3 : 0.6) * GiB, frag = 0.06 * (act + logits), comm = N > 1 ? 0.25 * GiB + (zero ? 2 * P * 2 / N * 0.05 : 0) : 0;
+    const ctx = (isApple(g) ? 0.3 : 0.6) * GiB, frag = 0.06 * (act + logits);
+    // ZeRO-3 gathers full unsharded layers (~2 layers prefetch buffer), independent of N.
+    const zeroBuf = zero >= 3 ? 2 * (P / Math.max(1, G.L)) * wBpp : zero >= 1 ? Math.min(0.5 * GiB, trainable * 2 / N * 0.1) : 0;
+    const comm = N > 1 ? 0.25 * GiB + zeroBuf : 0;
     const qBuf = method === 'qlora' ? P * 0.02 : 0; // dequantisation scratch
     const segs = [
       ['weights', method === 'full' ? 'Model weights' : 'Base weights (frozen)', wGpu],
@@ -642,13 +787,20 @@
     if (tokens < 2048) mfu *= Math.max(0.35, tokens / 2048);                        // tiny micro-batches under-fill the GPU
     let tps = mfu * tfl.v * fp8TrainX * 1e12 * N / flopsTok;
     const tokensPerStep = tokens * N * inp.gradSteps;
-    // gradient all-reduce once per optimizer step (overlap 70%)
+    // gradient all-reduce / ZeRO collectives once per optimizer step (overlap 70%)
     let commS = 0;
     if (N > 1) {
       const link = LINKS[inp.cluster ? inp.interNode : inp.interconnect] || LINKS.pcie4;
-      commS = 0.3 * 2 * (N - 1) / N * trainable * 2 / (link.bw * 1e9);
-      // ZeRO-3 also all-gathers the sharded weights in forward and backward of every micro-batch (70% overlapped)
-      if (zero >= 3) commS += inp.gradSteps * 0.3 * 2 * (N - 1) / N * P * wBpp / (link.bw * 1e9);
+      const bwBps = link.bw * 1e9;
+      if (zero === 0) {
+        commS = 0.3 * 2 * (N - 1) / N * trainable * gradB / bwBps;
+      } else if (zero <= 2) {
+        // ZeRO-1/2: 1 gradient reduce-scatter + 1 updated-param all-gather per step
+        commS = 0.3 * (N - 1) / N * trainable * (gradB + wBpp) / bwBps;
+      } else {
+        // ZeRO-3: gradient reduce-scatter + (2 + ck) param all-gathers per micro-batch (fwd, bwd, recompute)
+        commS = 0.3 * (N - 1) / N * (trainable * gradB + inp.gradSteps * (2 + ck) * P * wBpp) / bwBps;
+      }
       tps = tokensPerStep / (tokensPerStep / tps + commS);
     }
     const offloadPenalty = (offOpt ? 0.85 : 1) * (offGrad ? 0.90 : 1) * (offParam ? 0.6 : 1) * (o.activation_offloading ? 0.9 : 1);
@@ -691,7 +843,8 @@
     const video = m.task_type === 'video_generation';
     const frames = video ? inp.numFrames : 1;
     const latFrames = video ? 1 + Math.floor((frames - 1) / 4) : 1;                // 4× temporal VAE compression
-    const tokens = latFrames * Math.ceil(inp.imageWidth / 16) * Math.ceil(inp.imageHeight / 16) * (isUnet ? 0.25 : 1);
+    const spatialDs = m.spatial_downsample || (isUnet ? 32 : 16);                  // VAE downsample × patch size (e.g. 16×2=32 for Wan 2.2 TI2V-5B)
+    const tokens = latFrames * Math.ceil(inp.imageWidth / spatialDs) * Math.ceil(inp.imageHeight / spatialDs);
     const distilledCfg = /flux|schnell|turbo|lightning/.test(m.slug);
     const cfg = inp.guidanceScale > 1 && !distilledCfg ? 2 : 1;
     const Lyt = layout(inp);
@@ -705,30 +858,37 @@
     T.push({ g: 'Memory', k: 'Denoiser weights', f: `${fmtP(P)} × ${q.bpw} bits ÷ 8`, v: gib(wB) });
     T.push({ g: 'Memory', k: 'Text encoders', f: `${fmtP(aux)} × 2 B${inp.encoderOffload ? ' — offloaded to CPU after encoding' : ''}`, v: gib(encB) });
     const actB = b * cfg * tokens * h * 2 * 12;
-    T.push({ g: 'Memory', k: 'Latent activations', f: `batch ${b} × CFG ${cfg} × ${Math.round(tokens).toLocaleString()} latent tokens × h ${h} × 2 B × 12 live tensors`, v: gib(actB) });
-    const px = inp.imageWidth * inp.imageHeight * Math.min(frames, 8);
+    T.push({ g: 'Memory', k: 'Latent activations', f: `batch ${b} × CFG ${cfg} × ${Math.round(tokens).toLocaleString()} latent tokens (${spatialDs}× spatial) × h ${h} × 2 B × 12 live tensors`, v: gib(actB) });
+    // Causal 3D video VAEs decode 1 temporal chunk (4 frames) at a time.
+    const vaeFrames = video ? Math.min(frames, 4) : 1;
+    const px = inp.imageWidth * inp.imageHeight * vaeFrames;
     const vaeB = (inp.vaeTiling ? Math.min(px, 512 * 512) : px) * 2560;
-    T.push({ g: 'Memory', k: 'VAE decode workspace', f: `${inp.vaeTiling ? 'tile 512×512' : `${inp.imageWidth}×${inp.imageHeight}${video ? ` × ${Math.min(frames, 8)} frames` : ''}`} px × 2.5 KiB (128-ch conv feature maps)`, v: gib(vaeB) });
+    T.push({ g: 'Memory', k: 'VAE decode workspace', f: `${inp.vaeTiling ? 'tile 512×512' : `${inp.imageWidth}×${inp.imageHeight}${video ? ` × ${vaeFrames} frames` : ''}`} px × 2.5 KiB (runs sequentially after denoiser)`, v: gib(vaeB) });
     const ctx = (isApple(g) ? 0.3 : 0.6) * GiB;
     const shard = inp.cluster ? Math.min(Lyt.tp, Lyt.n) : Math.max(1, Lyt.n);
     const actGpu = actB / Math.max(1, Lyt.n);
-    const segs = [['weights', 'Denoiser weights', wB / shard], ...(encGpu ? [['enc', 'Text encoders', encGpu / shard]] : []), ['act', 'Latent activations', actGpu], ['vae', 'VAE decode workspace', vaeB], ['ctx', 'Runtime context', ctx], ['frag', 'Allocator fragmentation', 0.05 * (actGpu + vaeB)]];
+    // Denoiser latents are freed before VAE decode runs, so peak VRAM uses max(latents, VAE).
+    const peakWork = Math.max(actGpu, vaeB);
+    const peakSeg = vaeB > actGpu ? ['vae', 'Peak workspace (VAE decode)', vaeB] : ['act', 'Peak workspace (latent activations)', actGpu];
+    const segs = [['weights', 'Denoiser weights', wB / shard], ...(encGpu ? [['enc', 'Text encoders', encGpu / shard]] : []), peakSeg, ['ctx', 'Runtime context', ctx], ['frag', 'Allocator fragmentation', 0.05 * peakWork]];
     const perGpu = segs.reduce((a, s) => a + s[2], 0);
     const pct = perGpu / (usable.v * GiB) * 100;
 
-    const linearFlops = 2 * A * tokens * cfg * b;
+    // MMDiT models split weights between image and text streams; only the image stream runs on every image token.
+    const imgRatio = m.image_param_ratio ?? 1;
+    const linearFlops = 2 * A * imgRatio * tokens * cfg * b;
     const attnFlops = 4 * L * tokens * tokens * h * cfg * b;
     const flopsStep = linearFlops + attnFlops;
     const lowP = lowPrecisionX(q, g);
     const attnLowP = q.fp8 && supportsFp8(g) ? 1.5 : 1;
-    // Smooth, strictly monotonic efficiency curve calibrated to FLUX/SDXL timings (higher TFLOPS is never slower).
-    const eff = (0.60 / (1 + Math.pow(tfl.v / 1400, 0.75))) * (/tensorrt/.test(inp.runtime) ? 1.35 : 1);
+    // Smooth, strictly monotonic efficiency curve calibrated to FLUX/SD3.5/Wan timings (higher TFLOPS is never slower).
+    const eff = (0.66 / (1 + Math.pow(tfl.v / 1800, 0.75))) * (/tensorrt/.test(inp.runtime) ? 1.35 : 1);
     const gpuScale = Math.max(1, Lyt.n === 1 ? 1 : Lyt.n * 0.85);
     const tStep = (linearFlops / lowP.x + attnFlops / attnLowP) / (tfl.v * 1e12 * eff * gpuScale);
-    const tVae = (px * frames / Math.min(frames, 8)) * 2.6e6 * b / (tfl.v * 1e12 * 0.3);
+    const tVae = (inp.imageWidth * inp.imageHeight * frames) * 2.6e6 * b / (tfl.v * 1e12 * 0.3);
     const tEnc = inp.encoderOffload ? 0.8 : 0.05;
     const total = inp.inferenceSteps * tStep + tVae + tEnc;
-    T.push({ g: 'Speed', k: 'FLOPs per step', f: `(2 × params × tokens + 4·L·tokens²·h) × CFG ${cfg} × batch ${b}`, v: `${(flopsStep / 1e12).toFixed(1)} TFLOP` });
+    T.push({ g: 'Speed', k: 'FLOPs per step', f: `(2 × params${imgRatio < 1 ? ` × ${imgRatio} img-stream` : ''} × tokens + 4·L·tokens²·h) × CFG ${cfg} × batch ${b}`, v: `${(flopsStep / 1e12).toFixed(1)} TFLOP` });
     T.push({ g: 'Speed', k: 'Step time', f: `FLOPs ÷ (${tfl.v.toFixed(1)} TFLOPS${lowP.x > 1 ? ` × ${lowP.x} ${lowP.label}` : ''} × ${eff.toFixed(2)} achieved)`, v: ms(tStep) });
     T.push({ g: 'Speed', k: 'Generation time', f: `${inp.inferenceSteps} steps × step + VAE decode ${ms(tVae)} + text encode ${ms(tEnc)}`, v: `${total.toFixed(1)} s` });
     const watts = g.tdp_watts * 0.85 * Lyt.n;
@@ -744,7 +904,42 @@
   }
 
   /* ------------------------------------------------------------------ */
-  function calculate(inp, model, gpu) {
+  function sanitize(raw) {
+    const numNodes = Math.max(1, Math.round(num(raw.numNodes, 1)));
+    const gpusPerNode = Math.max(1, Math.round(num(raw.gpusPerNode, 1)));
+    const numGpus = Math.max(1, Math.round(num(raw.numGpus, 1)));
+    const tpDegree = Math.max(1, Math.round(num(raw.tpDegree, 1)));
+    const ppDegree = Math.max(1, Math.round(num(raw.ppDegree, 1)));
+    const seq = Math.max(2, Math.round(num(raw.seq, 4096)));
+    const outputTokens = clamp(Math.round(num(raw.outputTokens, 512)), 1, seq - 1);
+    const batch = Math.max(1, Math.round(num(raw.batch, 1)));
+    const users = Math.max(1, Math.round(num(raw.users, 1)));
+    const gradSteps = Math.max(1, Math.round(num(raw.gradSteps, 1)));
+    const numSamples = Math.max(1, Math.round(num(raw.numSamples, 10000)));
+    const tokensPerSample = Math.max(1, Math.round(num(raw.tokensPerSample, 512)));
+    const numEpochs = Math.max(0.01, num(raw.numEpochs, 1));
+    const loraRank = Math.max(1, Math.round(num(raw.loraRank, 16)));
+    const imageWidth = Math.max(64, Math.round(num(raw.imageWidth, 1024)));
+    const imageHeight = Math.max(64, Math.round(num(raw.imageHeight, 1024)));
+    const numFrames = Math.max(1, Math.round(num(raw.numFrames, 1)));
+    const inferenceSteps = Math.max(1, Math.round(num(raw.inferenceSteps, 28)));
+    const guidanceScale = Math.max(0, num(raw.guidanceScale, 3.5));
+    const specTokens = Math.max(1, Math.round(num(raw.specTokens, 4)));
+    const specDraft = Math.max(0.01, num(raw.specDraft, 1));
+    const elec = Math.max(0, num(raw.elec, 0.16));
+    const carbon = Math.max(0, num(raw.carbon, 400));
+    return {
+      ...raw,
+      numNodes, gpusPerNode, numGpus, tpDegree, ppDegree, seq, outputTokens, batch, users,
+      gradSteps, numSamples, tokensPerSample, numEpochs, loraRank,
+      imageWidth, imageHeight, numFrames, inferenceSteps, guidanceScale,
+      specTokens, specDraft, elec, carbon,
+      opt: raw.opt || {},
+    };
+  }
+
+  function calculate(rawInp, model, gpu) {
+    const inp = sanitize(rawInp || {});
     const g = { ...gpu };
     let r;
     const isDiff = model.task_type === 'image_generation' || model.task_type === 'video_generation';
@@ -771,7 +966,7 @@
   function ms(s) { return s >= 1 ? `${s.toFixed(2)} s` : `${(s * 1000).toFixed(2)} ms`; }
 
 
-  const api = { calculate, geometry, weightBytes, unreadBytes, kvLayout, kvBytesSeq, kvBytesGroup, effTflops, deviceBw, usableGiB, autoRuntime, supportsFp8, QUANTS, KV_BYTES, KV_LABELS, RUNTIMES, LINKS, OFFLOAD, GiB };
+  const api = { calculate, geometry, weightBytes, unreadBytes, kvLayout, kvBytesSeq, kvBytesGroup, kvBytesReplica, effTflops, deviceBw, usableGiB, autoRuntime, supportsFp8, supportsMxfp4, lowPrecisionX, QUANTS, KV_BYTES, KV_LABELS, RUNTIMES, LINKS, OFFLOAD, GiB };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.GpuCalc = api;
 })(typeof window !== "undefined" ? window : globalThis);

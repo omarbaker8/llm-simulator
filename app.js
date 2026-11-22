@@ -27,7 +27,7 @@
   const STATUS_LABEL = { good: 'Comfortable fit', okay: 'Fits', moderate: 'Tight fit', high: 'Very tight', very_high: 'At the limit', insufficient: 'Does not fit' };
 
   /* ---------------- state ---------------- */
-  const OPT_DEFAULTS = { optimizer_type: 'adamw', zero_stage: 3, flash_attention: true, gradient_checkpointing: true, gradient_checkpointing_ratio: 1, use_8bit_optimizer: false, use_bf16_true: false, use_fused_kernels: true, sequence_packing: true, dynamic_padding: false, activation_offloading: false, offload_optimizer: false, offload_gradients: false, offload_param: false };
+  const OPT_DEFAULTS = { optimizer_type: 'adamw', zero_stage: 3, flash_attention: true, gradient_checkpointing: true, gradient_checkpointing_ratio: 1, use_8bit_optimizer: false, use_bf16_true: false, use_fused_kernels: true, fused_cross_entropy: false, sequence_packing: true, dynamic_padding: false, activation_offloading: false, offload_optimizer: false, offload_gradients: false, offload_param: false };
   const state = {
     mode: 'inference', model: 'llama-3-1-8b', quant: 'fp16', kvQuant: 'fp16', runtime: 'auto', diffRuntime: 'diffusers',
     gpu: '4090_24', customApple: false, custom: { memory: 24, bandwidth_gbs: 1000, fp16_tflops: 165, tdp_watts: 350 },
@@ -322,9 +322,10 @@
       const z = totalGpus() > 1 ? o.zero_stage : 0;
       h += `<details class="adv" data-open="opt"${state.open.opt ? ' open' : ''}><summary>Memory &amp; speed optimizations<span class="muted">${o.optimizer_type.toUpperCase()}${o.gradient_checkpointing ? ' · checkpointing' : ''}${totalGpus() > 1 ? ` · ZeRO-${z}` : ''}</span></summary><div class="adv-b">`;
       h += `<div class="cols2">${field('Optimizer', select('opt.optimizer_type', opt([['adamw', 'AdamW'], ['adam', 'Adam'], ['sgd', 'SGD with momentum'], ['adafactor', 'Adafactor']], o.optimizer_type), o.optimizer_type))}${totalGpus() > 1 ? field('ZeRO stage', select('opt.zero_stage', opt([[0, 'ZeRO-0 (plain DDP)'], [1, 'ZeRO-1 · optimizer'], [2, 'ZeRO-2 · + gradients'], [3, 'ZeRO-3 · + weights']], o.zero_stage), o.zero_stage)) : ''}</div>`;
-      h += `<div class="toggles">${toggle('opt.flash_attention', 'Flash attention', o.flash_attention)}${toggle('opt.gradient_checkpointing', 'Gradient checkpointing', o.gradient_checkpointing)}${toggle('opt.use_8bit_optimizer', '8-bit optimizer states', o.use_8bit_optimizer)}${toggle('opt.use_bf16_true', 'Pure BF16 (no FP32 master)', o.use_bf16_true)}${toggle('opt.use_fused_kernels', 'Fused kernels', o.use_fused_kernels)}${toggle('opt.sequence_packing', 'Sequence packing', o.sequence_packing)}${toggle('opt.dynamic_padding', 'Dynamic padding', o.dynamic_padding, o.sequence_packing)}${toggle('opt.activation_offloading', 'Activation offloading', o.activation_offloading)}</div>`;
+      h += `<div class="toggles">${toggle('opt.flash_attention', 'Flash attention', o.flash_attention)}${toggle('opt.gradient_checkpointing', 'Gradient checkpointing', o.gradient_checkpointing)}${toggle('opt.use_8bit_optimizer', '8-bit optimizer states', o.use_8bit_optimizer)}${toggle('opt.use_bf16_true', 'Pure BF16 (no FP32 master)', o.use_bf16_true)}${toggle('opt.use_fused_kernels', 'Fused kernels', o.use_fused_kernels)}${toggle('opt.fused_cross_entropy', 'Fused cross-entropy (chunked logits)', o.fused_cross_entropy)}${toggle('opt.sequence_packing', 'Sequence packing', o.sequence_packing)}${toggle('opt.dynamic_padding', 'Dynamic padding', o.dynamic_padding, o.sequence_packing)}${toggle('opt.activation_offloading', 'Activation offloading', o.activation_offloading)}</div>`;
       if (o.gradient_checkpointing) h += `<div style="margin-top:10px">${slider('Layers checkpointed', 'opt.gradient_checkpointing_ratio', Math.round(o.gradient_checkpointing_ratio * 100), 0, 100, 5, ['0%', '50%', '100%'], null, `${Math.round(o.gradient_checkpointing_ratio * 100)}%`)}</div>`;
-      if (totalGpus() > 1) h += `<div class="toggles" style="margin-top:6px">${toggle('opt.offload_optimizer', 'Offload optimizer (ZeRO ≥ 1)', o.offload_optimizer, z < 1)}${toggle('opt.offload_gradients', 'Offload gradients (ZeRO ≥ 2)', o.offload_gradients, z < 2)}${toggle('opt.offload_param', 'Offload weights (ZeRO-3)', o.offload_param, z < 3)}</div>`;
+      const multi = totalGpus() > 1;
+      h += `<div class="toggles" style="margin-top:6px">${toggle('opt.offload_optimizer', multi ? 'Offload optimizer (ZeRO ≥ 1)' : 'Offload optimizer to CPU', o.offload_optimizer, multi && z < 1)}${toggle('opt.offload_gradients', multi ? 'Offload gradients (ZeRO ≥ 2)' : 'Offload gradients to CPU', o.offload_gradients, multi && z < 2)}${toggle('opt.offload_param', multi ? 'Offload weights (ZeRO-3)' : 'Offload weights to CPU', o.offload_param, multi && z < 3)}</div>`;
       h += '</div></details>';
     }
     h += '</div></div>';
@@ -667,7 +668,21 @@ Quantization helps in two ways at once: smaller weights take less memory, and fe
     if (!modelBySlug[state.model]) state.model = DEFAULTS.model;
     if (state.gpu !== 'custom' && !gpuByKey[state.gpu]) state.gpu = DEFAULTS.gpu;
     if (!C.QUANTS[state.quant]) state.quant = nativeQuant(model());
-    state.seq = clamp(state.seq, 512, maxCtx());
+    state.seq = clamp(Math.round(state.seq) || 4096, 512, maxCtx());
+    state.outputTokens = clamp(Math.round(state.outputTokens) || 512, 1, Math.max(1, state.seq - 1));
+    state.numGpus = clamp(Math.round(state.numGpus) || 1, 1, 64);
+    state.batch = clamp(Math.round(state.batch) || 1, 1, 256);
+    state.users = clamp(Math.round(state.users) || 1, 1, 256);
+    state.ftBatch = clamp(Math.round(state.ftBatch) || 1, 1, 256);
+    state.gradSteps = clamp(Math.round(state.gradSteps) || 1, 1, 256);
+    state.loraRank = clamp(Math.round(state.loraRank) || 16, 1, 512);
+    state.numNodes = clamp(Math.round(state.numNodes) || 1, 1, 64);
+    state.gpusPerNode = clamp(Math.round(state.gpusPerNode) || 1, 1, 8);
+    state.tpDegree = clamp(Math.round(state.tpDegree) || 1, 1, 8);
+    state.ppDegree = clamp(Math.round(state.ppDegree) || 1, 1, 64);
+    state.numSamples = Math.max(1, Math.round(state.numSamples) || 10000);
+    state.tokensPerSample = Math.max(1, Math.round(state.tokensPerSample) || 512);
+    state.numEpochs = Math.max(0.01, state.numEpochs || 1);
   }
 
   // boot
