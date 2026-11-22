@@ -113,7 +113,8 @@ section('B. KV cache per token (bytes) and totals');
   exact('Qwen3.5-27B llama.cpp: GDN state in F32 (2×)', '16×8192×(2·4·256·2) + 48×1634304×2', (16 * 8192 * 4096 + 48 * 1634304 * 2) / GiB, kv('qwen35-27b', '4090_24', { quant: 'q4_k_m', runtime: 'llamacpp' }), 0.01);
   const dp = run(INF, 'llama-3-1-8b', 'h100_80', { numGpus: 2, parallelism: 'replicated', users: 3 });
   const nonKv = dp.memory.perGpu - seg(dp, 'kv') - seg(dp, 'frag');
-  check('DP2 with 3 users: cluster total counts 3 sequences of KV, not 4', Math.abs(dp.memory.total - (2 * nonKv + 3 * 1.0 + 0.03 * (3 * 1.0 + 2 * seg(dp, 'act')))) < 0.01, `total ${dp.memory.total.toFixed(3)} GiB`);
+  // vLLM's KV is a preallocated pool: the 3% fragmentation applies to the activation buffers only.
+  check('DP2 with 3 users: cluster total counts 3 sequences of KV, not 4', Math.abs(dp.memory.total - (2 * nonKv + 3 * 1.0 + 0.03 * (2 * seg(dp, 'act')))) < 0.01, `total ${dp.memory.total.toFixed(3)} GiB`);
 }
 
 /* =========================================================================================================== */

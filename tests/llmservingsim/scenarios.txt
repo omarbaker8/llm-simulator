@@ -1,0 +1,70 @@
+single|--cluster-config single_node_single_instance.json --dataset example_trace.jsonl --num-reqs 10
+single_sharegpt|--cluster-config single_node_single_instance.json --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+single_mixed|--cluster-config single_node_single_instance.json --dataset workload_me2_01_mixed.jsonl --num-reqs 20
+multi|--cluster-config single_node_multi_instance.json --dataset example_trace.jsonl --num-reqs 10
+multi_sharegpt|--cluster-config single_node_multi_instance.json --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+moe_multi|--cluster-config single_node_moe_multi_instance.json --dataset example_trace.jsonl --num-reqs 10
+memory_instance|--cluster-config single_node_memory_instance.json --dataset example_trace.jsonl --num-reqs 10
+prefix_cpu_pool|--cluster-config single_node_multi_instance.json --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU --dataset example_trace.jsonl --num-reqs 10
+prefix_cpu_pool_sharegpt|--cluster-config single_node_multi_instance.json --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+dual_node_multi|--cluster-config dual_node_multi_instance.json --dataset example_trace.jsonl --num-reqs 10
+dual_prefix_cpu_pool|--cluster-config dual_node_multi_instance.json --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU --dataset example_trace.jsonl --num-reqs 10
+prefix_cxl_pool|--cluster-config single_node_cxl_instance.json --enable-prefix-caching --enable-prefix-sharing --prefix-storage CXL --dataset example_trace.jsonl --num-reqs 10
+cxl|--cluster-config single_node_cxl_instance.json --dataset example_trace.jsonl --num-reqs 10
+local_offloading|--cluster-config single_node_single_instance.json --enable-local-offloading --dataset example_trace.jsonl --num-reqs 10
+chunked_prefill_512|--cluster-config single_node_single_instance.json --max-num-batched-tokens 512 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+chunked_prefill_off|--cluster-config single_node_single_instance.json --no-enable-chunked-prefill --max-num-batched-tokens 8192 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+long_prefill_threshold|--cluster-config single_node_single_instance.json --long-prefill-token-threshold 256 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+max_num_seqs_8|--cluster-config single_node_single_instance.json --max-num-seqs 8 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+skip_prefill|--cluster-config single_node_single_instance.json --skip-prefill --dataset example_trace.jsonl --num-reqs 10
+saturated|--cluster-config single_node_single_instance.json --npu-memory-utilization 0.18 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+saturated_prefix_off|--cluster-config single_node_single_instance.json --npu-memory-utilization 0.18 --no-enable-prefix-caching --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+saturated_no_reserve|--cluster-config single_node_single_instance.json --npu-memory-utilization 0.18 --no-reserve-full-isl --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+saturated_cpu_pool|--cluster-config single_node_single_instance.json --npu-memory-utilization 0.18 --enable-prefix-caching --enable-prefix-sharing --prefix-storage CPU --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+saturated_block_size_64|--cluster-config single_node_single_instance.json --npu-memory-utilization 0.18 --block-size 64 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+saturated_wide_batch|--cluster-config single_node_single_instance.json --npu-memory-utilization 0.18 --max-num-batched-tokens 8192 --max-num-seqs 512 --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+routing_rr|--cluster-config single_node_multi_instance.json --request-routing-policy RR --dataset example_trace.jsonl --num-reqs 10
+routing_rand|--cluster-config single_node_multi_instance.json --request-routing-policy RAND --dataset example_trace.jsonl --num-reqs 10
+expert_routing_rr|--cluster-config single_node_moe_single_instance.json --expert-routing-policy RR --dataset example_trace.jsonl --num-reqs 10
+expert_routing_rand|--cluster-config single_node_moe_single_instance.json --expert-routing-policy RAND --dataset example_trace.jsonl --num-reqs 10
+no_block_copy|--cluster-config single_node_moe_single_instance.json --no-enable-block-copy --dataset example_trace.jsonl --num-reqs 10
+pp|--cluster-config single_node_pp_instance.json --dataset example_trace.jsonl --num-reqs 10
+tp_pp|--cluster-config single_node_tp_pp_instance.json --dataset example_trace.jsonl --num-reqs 10
+dp|--cluster-config single_node_dp_instance.json --dataset example_trace.jsonl --num-reqs 10
+dp_pp|--cluster-config single_node_dp_pp_instance.json --dataset example_trace.jsonl --num-reqs 10
+multi_instance_8npu|--cluster-config single_node_4_instance_2TP.json --dataset example_trace.jsonl --num-reqs 10
+moe|--cluster-config single_node_moe_single_instance.json --dataset example_trace.jsonl --num-reqs 10
+moe_pp|--cluster-config single_node_moe_pp_instance.json --dataset example_trace.jsonl --num-reqs 10
+moe_dp_ep|--cluster-config single_node_moe_dp_ep_instance.json --dataset example_trace.jsonl --num-reqs 10
+moe_dp_tp|--cluster-config single_node_moe_dp_tp_instance.json --dataset example_trace.jsonl --num-reqs 10
+moe_dp_pp|--cluster-config single_node_moe_dp_pp_instance.json --dataset example_trace.jsonl --num-reqs 10
+moe_dp_tp_pp|--cluster-config single_node_moe_dp_tp_pp_instance.json --dataset example_trace.jsonl --num-reqs 10
+dual_node_moe_dp_ep|--cluster-config dual_node_moe_dp_ep_intra_inter_instance.json --dataset example_trace.jsonl --num-reqs 10
+dp_pp_uneven|--cluster-config single_node_dp_pp_instance.json --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 50
+moe_dp_pp_uneven|--cluster-config single_node_moe_dp_pp_instance.json --dataset sharegpt-qwen3-30b-a3b-300-sps10.jsonl --num-reqs 2
+moe_dp_tp_pp_uneven|--cluster-config single_node_moe_dp_tp_pp_instance.json --dataset sharegpt-qwen3-30b-a3b-300-sps10.jsonl --num-reqs 10
+moe_dp_ep_uneven|--cluster-config single_node_moe_dp_ep_instance.json --dataset sharegpt-qwen3-30b-a3b-300-sps10.jsonl --num-reqs 10
+pd|--cluster-config single_node_pd_instance.json --dataset example_trace.jsonl --num-reqs 10
+pd_per_instance_config|--cluster-config single_node_pd_per_instance_config.json --dataset example_trace.jsonl --num-reqs 10
+pd_sharegpt|--cluster-config single_node_pd_instance.json --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+moe_pd|--cluster-config single_node_moe_pd_instance.json --dataset example_trace.jsonl --num-reqs 10
+heterogeneous|--cluster-config single_node_heterogeneous.json --dataset sharegpt-qwen3-32b-300-sps10.jsonl --num-reqs 10
+pim|--cluster-config single_node_pim_instance.json --enable-attn-offloading --dataset example_trace.jsonl --num-reqs 10
+pim_sub_batch|--cluster-config single_node_pim_instance.json --enable-attn-offloading --enable-sub-batch-interleaving --dataset example_trace.jsonl --num-reqs 10
+power|--cluster-config single_node_power_instance.json --dataset example_trace.jsonl --num-reqs 10 --log-interval 0.1
+agentic_single|--cluster-config single_node_single_instance.json --dataset swe-bench-qwen3-30b-a3b-50-sps0.2.jsonl --num-reqs 1
+agentic_moe_dp_ep|--cluster-config single_node_moe_dp_ep_instance.json --dataset swe-bench-qwen3-30b-a3b-50-sps0.2.jsonl --num-reqs 1
+hybrid|--cluster-config single_node_hybrid_instance.json --dataset example_trace.jsonl --num-reqs 4
+hybrid_prefix_off|--cluster-config single_node_hybrid_instance.json --no-enable-prefix-caching --dataset example_trace.jsonl --num-reqs 4
+hybrid_tp|--cluster-config single_node_hybrid_tp_instance.json --dataset example_trace.jsonl --num-reqs 4
+hybrid_pp|--cluster-config single_node_hybrid_pp_instance.json --dataset example_trace.jsonl --num-reqs 4
+sparse_mla|--cluster-config single_node_sparse_mla_instance.json --dataset example_trace.jsonl --num-reqs 4
+sparse_mla_dp_ep|--cluster-config single_node_sparse_mla_dp_ep_instance.json --dataset example_trace.jsonl --num-reqs 4
+sparse_gqa|--cluster-config single_node_sparse_gqa_instance.json --dataset example_trace.jsonl --num-reqs 4
+spec_hybrid|--cluster-config single_node_hybrid_instance.json --num-speculative-tokens 5 --dataset example_trace.jsonl --num-reqs 4
+spec_sparse_mla|--cluster-config single_node_sparse_mla_instance.json --num-speculative-tokens 4 --dataset example_trace.jsonl --num-reqs 4
+spec_sparse_gqa|--cluster-config single_node_sparse_gqa_instance.json --num-speculative-tokens 3 --dataset example_trace.jsonl --num-reqs 4
+spec_pp|--cluster-config single_node_hybrid_pp_instance.json --num-speculative-tokens 5 --dataset example_trace.jsonl --num-reqs 4
+spec_dp_ep|--cluster-config single_node_sparse_mla_dp_ep_instance.json --num-speculative-tokens 4 --dataset example_trace.jsonl --num-reqs 4
+rtx4090_single|--cluster-config rtx4090_single_instance.json --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20
+rtx4090_multi|--cluster-config rtx4090_multi_instance.json --dataset sharegpt-llama-3.1-8b-300-sps10.jsonl --num-reqs 20

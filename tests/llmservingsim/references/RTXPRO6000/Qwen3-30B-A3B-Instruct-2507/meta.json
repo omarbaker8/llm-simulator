@@ -1,0 +1,56 @@
+{
+ "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+ "vllm_version": "0.31.0",
+ "dataset_path": "workloads/sharegpt-qwen3-30b-a3b-300-sps10.jsonl",
+ "engine_kwargs": {
+  "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "tensor_parallel_size": 1,
+  "data_parallel_size": 2,
+  "enable_expert_parallel": true,
+  "max_num_seqs": 128,
+  "max_num_batched_tokens": 2048,
+  "disable_custom_all_reduce": false,
+  "max_model_len": null,
+  "dtype": "bfloat16",
+  "kv_cache_dtype": "auto",
+  "kv_cache_memory_bytes": null,
+  "seed": 42,
+  "load_format": "auto",
+  "skip_tokenizer_init": true,
+  "enforce_eager": false,
+  "compilation_config": {
+   "pass_config": {
+    "fuse_allreduce_rms": false,
+    "fuse_gemm_comms": false
+   }
+  }
+ },
+ "kv_cache": {
+  "num_gpu_blocks": 76512,
+  "block_size": 16,
+  "gpu_memory_utilization": 0.92,
+  "enable_prefix_caching": true,
+  "per_engine": [
+   {
+    "data_parallel_rank": 0,
+    "num_gpu_blocks": 38256,
+    "block_size": 16,
+    "kv_cache_size_tokens": 612096,
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1,
+    "data_parallel_size": 2,
+    "vllm_version": "0.31.0"
+   },
+   {
+    "data_parallel_rank": 1,
+    "num_gpu_blocks": 38256,
+    "block_size": 16,
+    "kv_cache_size_tokens": 612096,
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1,
+    "data_parallel_size": 2,
+    "vllm_version": "0.31.0"
+   }
+  ]
+ }
+}

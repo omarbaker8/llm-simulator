@@ -1,4 +1,4 @@
-// 50 hand-calculated checks. Every expected value below is derived here from published model configs
+// 59 hand-calculated checks. Every expected value below is derived here from published model configs
 // (Hugging Face config.json numbers written out as literals) and first-principles formulas — NOT from calc.js.
 // Usage: node tests/hand.js
 const fs = require('fs'), vm = require('vm'), path = require('path');
@@ -133,6 +133,35 @@ T('Decode', 'gpt-oss-20b MXFP4 4090 llama.cpp tok/s vs 222 (llama.cpp #15396)', 
   T('Diffusion', 'Wan2.1 1280×720×81f latent tokens', '(1 + 80/4) × (1280/16) × (720/16)', 21 * 80 * 45, w.perf.latentTokens, 0.01);
   const t = run(DIF, 'wan-2-2-ti2v-5b', '4090_24', { imageWidth: 1280, imageHeight: 704, numFrames: 121, inferenceSteps: 50, guidanceScale: 5 });
   T('Diffusion', 'Wan2.2 TI2V-5B 1280×704×121f tokens (16× VAE, 2×2 patch)', '(1 + 120/4) × (1280/32) × (704/32)', 31 * 40 * 22, t.perf ? t.perf.latentTokens : NaN, 0.01);
+}
+
+/* ===== H. Serving memory & prefill (checked against LLMServingSim's real vLLM runs) ===== */
+{
+  const kvTok8 = 32 * 2 * 8 * 128 * 2;                                    // Llama-8B: 128 KiB per token
+  const act = (chunk, h, ffn) => chunk * (4 * h + 3 * ffn) * 2 + L8.V * 4; // prefill chunk activations + 1 × vocab logits
+  // RTX PRO 6000 Blackwell Server Edition: datasheet 1597 GB/s. Decode reads all weights but the untied input table.
+  const wRead = L8.P * 2 - L8.V * L8.h * 2, kvRead = ((4096 - 512) + 256) * kvTok8, fixed = 0.30e-3 + 32 * 6e-6;
+  T('Serving', 'Llama-8B decode step, RTX PRO 6000 Server Edition (ms)', '(15.009e9 + 3840 × 128 KiB) ÷ (1597 GB/s × 0.80) + 0.30 ms + 32 × 6 µs',
+    ((wRead + kvRead) / (1597e9 * 0.8) + fixed) * 1e3, run(INF, 'llama-3-1-8b', 'rtx_6000_blackwell_server_96', { seq: 4096 }).perf.stepMs, 0.5);
+  // MoE prefill reads only the routed experts the prompt touches: Qwen3-30B-A3B routed = 48 × 128 × 3 × 2048 × 768.
+  const routedQ = 48 * 128 * 3 * 2048 * 768, touch = 1 - (1 - 8 / 128) ** 10;
+  const pq = run(INF, 'qwen3-30b-a3b', 'h100_80', { seq: 11, outputTokens: 1 }).perf;
+  T('Serving', 'Qwen3-30B-A3B prefill of 10 tokens, H100 (ms)', '(61.0e9 − 28.99e9 × 2 B × (1 − 8/128)^10) ÷ (3350 GB/s × 0.80) + 48 × 6 µs',
+    ((30.5e9 * 2 - routedQ * 2 * (1 - touch)) / (3350e9 * 0.8) + 48 * 6e-6) * 1e3, pq.ttft - pq.decodeStepMs, 0.5);
+  // vLLM `serve` max_num_batched_tokens by device memory: < 70 GiB → 2048, ≥ 70 GiB → 8192 (A100 excluded), ≥ 160 GiB → 16384.
+  const r4 = run(INF, 'llama-3-1-8b', '4090_24', { seq: 16384, outputTokens: 1 });
+  T('Serving', 'Llama-8B activations, RTX 4090 (2048-token chunk) (GiB)', '2048 × (4·4096 + 3·14336) × 2 B + 128256 × 4 B', act(2048, 4096, 14336) / GiB, seg(r4, 'act'), 0.1);
+  T('Serving', 'Llama-8B activations, A100-80GB (2048, excluded tier) (GiB)', '2048 × 59392 × 2 B + 128256 × 4 B', act(2048, 4096, 14336) / GiB, seg(run(INF, 'llama-3-1-8b', 'a100_80', { seq: 16384, outputTokens: 1 }), 'act'), 0.1);
+  T('Serving', 'Llama-8B activations, H100 (8192-token chunk) (GiB)', '8192 × 59392 × 2 B + 128256 × 4 B', act(8192, 4096, 14336) / GiB, seg(run(INF, 'llama-3-1-8b', 'h100_80', { seq: 16384, outputTokens: 1 }), 'act'), 0.1);
+  T('Serving', 'Llama-70B activations, B200 (16384-token chunk) (GiB)', '16384 × (4·8192 + 3·28672) × 2 B + 128256 × 4 B', act(16384, 8192, 28672) / GiB, seg(run(INF, 'llama-3-1-70b', 'b200_192', { seq: 32768, outputTokens: 1, quant: 'fp8' }), 'act'), 0.1);
+  // KV is a preallocated pool (no fragmentation); 3% fragmentation applies to activations only.
+  const nonKv4 = L8.P * 2 + act(2048, 4096, 14336) * 1.03 + 1.30 * GiB;  // weights + activations·1.03 + context 0.55 + graphs 0.75
+  T('Serving', 'Llama-8B per-GPU use, 4090, 16,384-token context (GiB)', 'weights + act × 1.03 + 0.55 + 0.75 + 16384 × 128 KiB', (nonKv4 + 16384 * kvTok8) / GiB, r4.memory.perGpu, 0.1);
+  const kvCap = (r, s, util = 0.9) => (r.memory.capPerGpu / 0.9 * util - (r.memory.perGpu - seg(r, 'kv'))) / (seg(r, 'kv') / s);
+  T('Serving', 'Llama-8B KV capacity, 4090 @0.90 (tokens; vLLM measured 41,408)', '(0.90 × 24 GiB − non-KV) ÷ 128 KiB', (0.9 * 24 * GiB - nonKv4) / kvTok8, kvCap(r4, 16383), 0.1);
+  const nonKvP = L8.P * 2 + act(8192, 4096, 14336) * 1.03 + 1.30 * GiB;
+  T('Serving', 'Llama-8B KV capacity, RTX PRO 6000 @0.92 (tokens; measured 586,384)', '(0.92 × 96 GiB − non-KV(8192 chunk)) ÷ 128 KiB', (0.92 * 96 * GiB - nonKvP) / kvTok8,
+    kvCap(run(INF, 'llama-3-1-8b', 'rtx_6000_blackwell_server_96', { seq: 16384, outputTokens: 1 }), 16383, 0.92), 0.1);
 }
 
 /* ---------- report ---------- */

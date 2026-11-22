@@ -1,0 +1,26 @@
+{
+ "model": "deepseek-ai/DeepSeek-V3.2-Exp-16L64E",
+ "vllm_version": "0.28.0",
+ "dataset_path": "workloads/sharegpt-deepseek-v32-16l64e-300-sps10.jsonl",
+ "engine_kwargs": {
+  "model": "deepseek-ai/DeepSeek-V3.2-Exp-16L64E",
+  "tensor_parallel_size": 1,
+  "data_parallel_size": 1,
+  "enable_expert_parallel": false,
+  "max_num_seqs": 128,
+  "max_num_batched_tokens": 2048,
+  "max_model_len": null,
+  "dtype": "bfloat16",
+  "kv_cache_dtype": "auto",
+  "seed": 42,
+  "load_format": "dummy",
+  "skip_tokenizer_init": true
+ },
+ "kv_cache": {
+  "num_gpu_blocks": 49181,
+  "block_size": 64,
+  "gpu_memory_utilization": 0.92,
+  "enable_prefix_caching": true,
+  "per_engine": null
+ }
+}

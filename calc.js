@@ -63,7 +63,7 @@
    *  frag      allocator fragmentation as a share of dynamic memory
    * ------------------------------------------------------------------ */
   const RUNTIMES = {
-    vllm:     { label: 'vLLM', bwEff: 0.80, pfEff: 0.55, layerUs: 6, stepMs: 0.30, chunk: 8192, ctxGiB: 0.55, graphGiB: 0.75, frag: 0.03, desc: 'Paged KV cache, continuous batching, CUDA graphs, chunked prefill (8192).' },
+    vllm:     { label: 'vLLM', bwEff: 0.80, pfEff: 0.55, layerUs: 6, stepMs: 0.30, chunk: 8192, ctxGiB: 0.55, graphGiB: 0.75, frag: 0.03, desc: 'Paged KV cache, continuous batching, CUDA graphs, chunked prefill (2048 / 8192 / 16384 tokens by GPU memory).' },
     sglang:   { label: 'SGLang', bwEff: 0.81, pfEff: 0.56, layerUs: 6, stepMs: 0.25, chunk: 8192, ctxGiB: 0.55, graphGiB: 0.70, frag: 0.03, desc: 'Radix-tree prefix cache, continuous batching, CUDA graphs.' },
     trtllm:   { label: 'TensorRT-LLM', bwEff: 0.84, pfEff: 0.62, layerUs: 4, stepMs: 0.20, chunk: 8192, ctxGiB: 0.50, graphGiB: 0.35, frag: 0.02, desc: 'Compiled engines with fused kernels and in-flight batching.' },
     llamacpp: { label: 'llama.cpp', bwEff: 0.74, pfEff: 0.42, layerUs: 10, stepMs: 0.35, chunk: 512, ctxGiB: 0.35, graphGiB: 0.10, frag: 0.02, desc: 'GGUF weights, 512-token micro-batches (n_ubatch), parallel slots.' },
@@ -136,6 +136,16 @@
     if (g.vendor === 'amd' && g.type !== 'apu') return { v: g.category === 'datacenter' ? 0.88 : 0.82, note: 'ROCm kernels reach slightly less of peak than CUDA' };
     if (g.vendor === 'intel') return { v: 0.75, note: 'Intel Arc (SYCL/Vulkan) kernels' };
     return { v: 1, note: '' };
+  }
+
+  /** Prefill chunk (tokens per step). `vllm serve` sizes max_num_batched_tokens by device memory (vllm/engine/arg_utils.py,
+   *  OPENAI_API_SERVER): ≥ 160 GiB → 16384; ≥ 70 GiB → 8192 (A100 and GB10 excluded); otherwise 2048. */
+  function prefillChunk(R, rtKey, g) {
+    if (rtKey !== 'vllm') return R.chunk;
+    const mem = g.usable_memory || g.memory;
+    if (mem >= 160) return 16384;
+    if (mem >= 70 && !/^(a100|gb10)/.test(g.key)) return 8192;
+    return 2048;
   }
 
   /** Memory a single device lets you allocate for compute. */
@@ -457,6 +467,7 @@
     const kvB = KV_BYTES[inp.kvQuant] ?? 2;
     const rtKey = inp.runtime === 'auto' || !RUNTIMES[inp.runtime] ? autoRuntime(g, inp.quant) : inp.runtime;
     const R = RUNTIMES[rtKey];
+    const rtChunk = prefillChunk(R, rtKey, g);
     const Lyt = layout(inp);
     const shards = Lyt.tp * Lyt.pp;           // GPUs holding one copy of the model
     const replicas = Lyt.dp;
@@ -507,7 +518,7 @@
 
     // ---- activations (peak during chunked prefill) + logits ----
     // A request prefills its prompt once even when generating `batch` parallel completions (n).
-    const chunkTok = Math.min(promptTok, R.chunk);
+    const chunkTok = Math.min(promptTok, rtChunk);
     const prefillActB = chunkTok * (4 * G.h + 3 * G.ffnActive) * 2;
     const logitsActB = sRep * (G.V || 32000) * 4;
     const actRep = prefillActB + logitsActB;
@@ -540,8 +551,11 @@
     const kvGpu = offKvFlag ? 0 : kvGpuFrom(kvRepObj);
     const actGpu = actRep / Lyt.tp;
     const draftGpu = inp.spec ? draftB / shards + (offKvFlag ? 0 : draftKvRep / (kvShardSwa * Lyt.pp)) : 0;
-    const dyn = kvGpu + actGpu;
-    const fragGpu = dyn * R.frag;
+    // vLLM, SGLang, TensorRT-LLM and llama.cpp/Ollama allocate the KV cache once as a fixed pool (vLLM: num_blocks =
+    // available memory ÷ page size), so it does not fragment; only the activation buffers do. MLX grows its cache in
+    // 256-token steps and HF Transformers concatenates tensors, so their KV does fragment.
+    const kvFrag = ['vllm', 'sglang', 'trtllm', 'llamacpp', 'ollama'].includes(rtKey) ? 0 : R.frag;
+    const fragGpu = actGpu * R.frag + kvGpu * kvFrag;
     const ctxGpu = R.ctxGiB * GiB;
     const graphGpu = isApple(g) ? 0 : R.graphGiB * GiB;
     const commGpu = Lyt.n > 1 ? 0.25 * GiB : 0; // NCCL buffers
@@ -558,7 +572,7 @@
       ...(commGpu ? [['comm', 'Collective buffers', commGpu]] : []),
       ['frag', 'Allocator fragmentation', fragGpu],
     ];
-    T.push({ g: 'Memory', k: 'Runtime overhead', f: `${R.label}: context ${R.ctxGiB} GiB${graphGpu ? ` + graphs ${R.graphGiB} GiB` : ''} + ${Math.round(R.frag * 100)}% fragmentation of KV+activations${commGpu ? ' + 0.25 GiB NCCL' : ''} (per GPU)`, v: gib(ctxGpu + graphGpu + fragGpu + commGpu) });
+    T.push({ g: 'Memory', k: 'Runtime overhead', f: `${R.label}: context ${R.ctxGiB} GiB${graphGpu ? ` + graphs ${R.graphGiB} GiB` : ''} + ${Math.round(R.frag * 100)}% fragmentation of ${kvFrag ? 'KV+activations' : 'activations (KV is a preallocated pool)'}${commGpu ? ' + 0.25 GiB NCCL' : ''} (per GPU)`, v: gib(ctxGpu + graphGpu + fragGpu + commGpu) });
 
     const perGpu = segsGpu.reduce((a, s) => a + s[2], 0);
     // Cluster total: every replica holds the weights, but each holds only its own users' KV (uneven splits handled);
@@ -566,7 +580,7 @@
     const nonKvGpu = perGpu - kvGpu - fragGpu;
     const repGpuBytes = (u) => {
       const kv = offKvFlag || u <= 0 ? 0 : kvGpuFrom(kvBytesReplica(K, promptTok, outTok, u, batch, u > 1 ? Math.round(promptTok * clamp(inp.prefixShare, 0, 1)) : 0, kvB));
-      return shards * (nonKvGpu + kv + R.frag * (kv + actGpu));
+      return shards * (nonKvGpu + kv + kvFrag * kv + R.frag * actGpu);
     };
     const totalUse = rU * repGpuBytes(qU + 1) + (replicas - rU) * repGpuBytes(qU);
     // Serving engines cap their own pool: vLLM gpu_memory_utilization and SGLang mem_fraction_static default to 0.90 of device
@@ -714,11 +728,16 @@
     const prefillTimeFor = (toks, pipelined) => {
       if (toks <= 0) return 0;
       const pfCompAll = (2 * G.Amm * toks / (pfLinX * pfLinEff) + (pfAttnFlops(toks) + pfIdxFlops(toks) / idxX) / pfAttnEff) / (tfl.v * 1e12 * Lyt.tp * tpCompEff);
-      const cTok = Math.min(R.chunk, toks);
+      const cTok = Math.min(rtChunk, toks);
       const nChunks = Math.ceil(toks / cTok);
       const pfW = Math.max(0, wB - ub);
-      const pfMemAll = nChunks * (pfW * (1 - offFrac)) / Lyt.tp / (bw * bwEff);
-      const pfOffAll = offFrac > 0 ? nChunks * pfW * offFrac / (offBw * 1e9 * (cpuRun ? 1 : Lyt.tp)) : 0;
+      // MoE: a chunk of n tokens reads only the routed experts it touches, 1 − (1 − k/E)^n of them (≈ all once n ≳ 100);
+      // the shared part (attention, shared experts, embeddings) is read in full. Summed over full chunks plus the remainder.
+      const pfChunkBytes = (n) => G.moe ? Math.max(0, pfW - G.routed * PR.restRate * Math.pow(1 - G.f, n)) : pfW;
+      const nFull = Math.floor(toks / cTok), rem = toks - nFull * cTok;
+      const pfWAll = nFull * pfChunkBytes(cTok) + (rem > 0 ? pfChunkBytes(rem) : 0);
+      const pfMemAll = (pfWAll * (1 - offFrac)) / Lyt.tp / (bw * bwEff);
+      const pfOffAll = offFrac > 0 ? pfWAll * offFrac / (offBw * 1e9 * (cpuRun ? 1 : Lyt.tp)) : 0;
       const pfCommAll = nChunks * (tpCommStageFor(cTok, G.L) + (Lyt.pp > 1 ? (Lyt.pp - 1) * ppHopFor(cTok) : 0));
       const pfFixedAll = nChunks * (G.L * R.layerUs * 1e-6) + pfCommAll;
       const seqTime = Math.max(pfCompAll, pfMemAll) + pfOffAll + pfFixedAll;
@@ -729,7 +748,7 @@
       return seqTime * (nChunks + Lyt.pp - 1) / (nChunks * Lyt.pp);
     };
     const pfFlops = 2 * G.Amm * pfTok + pfAttnFlops(pfTok) + pfIdxFlops(pfTok);
-    const pfChunkTok = Math.min(R.chunk, pfTok);
+    const pfChunkTok = Math.min(rtChunk, pfTok);
     const chunks = Math.ceil(pfTok / pfChunkTok);
     const tPrefill = prefillTimeFor(pfTok, false);
 
@@ -804,7 +823,7 @@
       },
       perf: fits ? {
         tps: perSeqTps, msPerToken: 1000 / perSeqTps, ttft: ttft * 1000, ttftQueued: ttftQueued * 1000, throughput,
-        prefillTps: pfTok / tPrefill, stepMs: tStep * 1000, bound: tComp > tMem ? 'compute' : 'memory-bandwidth', spec: specInfo,
+        prefillTps: pfTok / tPrefill, stepMs: tStep * 1000, decodeStepMs: tStepDecode * 1000, prefillAmortMs: tPrefillAmort * 1000, bound: tComp > tMem ? 'compute' : 'memory-bandwidth', spec: specInfo,
         promptTok, outTok, genSeconds: ttft + Math.max(0, outTok - 1) / perSeqTps,
       } : null,
       watts, trace: T, warnings: W, geometry: G,

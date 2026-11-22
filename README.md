@@ -14,8 +14,9 @@ Open `index.html` directly in a browser or serve the directory with any static f
 
 ```bash
 node tests/verify.js     # formulas, physics bounds, monotonicity, benchmark ranges, dataset checks
-node tests/hand.js       # 50 hand-calculated values from published model configs
+node tests/hand.js       # 59 hand-calculated values from published model configs
 node tests/scenarios.js  # 226 scenario tests: memory, KV, FLOPs, runtimes, parallelism, fine-tuning, diffusion, benchmarks
+node tests/llmservingsim/compare.js  # LLMServingSim scenarios + real vLLM runs replayed through this calculator
 ```
 
 
