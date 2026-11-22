@@ -16,6 +16,4 @@ node tests/hand.js       # 50 hand-calculated values from published model config
 node tests/scenarios.js  # 226 scenario tests: memory, KV, FLOPs, runtimes, parallelism, fine-tuning, diffusion, benchmarks
 ```
 
-## GitHub Pages
 
-Push to GitHub and enable **Settings → Pages → Deploy from a branch** (`main` / `/ (root)`).
