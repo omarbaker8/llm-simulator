@@ -11,7 +11,9 @@ Open `index.html` directly in a browser or serve the directory with any static f
 ## Tests
 
 ```bash
-node tests/verify.js
+node tests/verify.js     # formulas, physics bounds, monotonicity, benchmark ranges, dataset checks
+node tests/hand.js       # 50 hand-calculated values from published model configs
+node tests/scenarios.js  # 215 scenario tests: memory, KV, FLOPs, runtimes, parallelism, fine-tuning, diffusion, benchmarks
 ```
 
 ## GitHub Pages

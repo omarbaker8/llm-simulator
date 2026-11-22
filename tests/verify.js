@@ -299,11 +299,16 @@ console.log('6. Regression tests (third-review fixes)');
 console.log('7. Specialist audit regression tests');
 {
   // 1. DeepSeek V4 / V4.1 KV compression & Engram unread tables
-  const v41 = run('deepseek-v4-1-flash', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
-  range(v41.memory.kvPerToken, 700, 1100, 'DeepSeek-V4.1-Flash compressed FP8 KV/tok ≈ 890–940 B');
+  // Model card: "FP4 main KV caching (E2M1, one E4M3 scale per 16 channels) … 890 bytes per token".
+  const v41 = run('deepseek-v4-1-flash', 'b300_288', { quant: 'fp8', kvQuant: 'nvfp4', seq: 131072 });
+  near(v41.memory.kvPerToken, 890, 1e-9, 'DeepSeek-V4.1-Flash FP4 KV = 890 B/token (model card)');
+  const v41f8 = run('deepseek-v4-1-flash', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
+  near(v41f8.memory.kvPerToken, (3 * 576 / 2 + 576) * 1 + (3 * 32 / 2 + 32), 1e-9, 'DeepSeek-V4.1-Flash FP8 KV = 4 source layers (3 ÷2 + 1 full)');
   ok(C.geometry(M('deepseek-v4-1-flash')).unread === 196e9, 'DeepSeek-V4.1-Flash includes 196B unread Engram tables');
   const v4f = run('deepseek-v4-flash', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
-  near(v4f.memory.kvPerToken, 43 * (576 + 128) / 4, 1e-9, 'DeepSeek-V4-Flash KV compressed 4×');
+  // config.json compress_ratios: 21 CSA layers ÷4 + 20 HCA layers ÷128 (+2 SWA-only); 576-element latent, 132 B indexer keys.
+  near(v4f.memory.kvPerToken, (21 / 4 + 20 / 128) * (576 * 1 + 132), 1e-9, 'DeepSeek-V4-Flash KV: 21 layers ÷4 + 20 layers ÷128');
+  ok(v4f.memory.kvPerToken < 0.1 * run('deepseek-v32', 'b300_288', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 }).memory.kvPerToken, 'DeepSeek-V4-Flash KV < 10% of V3.2 (card: V4-Pro 10% at 1M)');
 
   // 2. Gemma 4 heterogeneous global vs sliding KV
   const g431 = run('gemma-4-31b', 'h100_80', { quant: 'fp8', kvQuant: 'fp8', seq: 131072 });
@@ -334,8 +339,9 @@ console.log('7. Specialist audit regression tests');
   range(ds8.perf.tps, 35, 75, 'DeepSeek-V3 FP8 8×H200 TP8 u=1 ≈ 45–65 tok/s');
   const oss8 = run('gpt-oss-120b', 'b200_192', { quant: 'mxfp4', numGpus: 8, parallelism: 'tensor', interconnect: 'nvlink_gen5', seq: 4096, outputTokens: 512, users: 1 });
   range(oss8.perf.tps, 340, 500, 'gpt-oss-120b MXFP4 8×B200 TP8 u=1 ≈ 420 tok/s');
-  const oss20 = run('gpt-oss-20b', '4090_24', { quant: 'mxfp4', seq: 4096, outputTokens: 512, users: 1 });
-  range(oss20.perf.tps, 175, 240, 'gpt-oss-20b MXFP4 RTX 4090 u=1 ≈ 200–222 tok/s');
+  // Reference is llama.cpp (discussion #15396), so pin the runtime: the GGUF keeps attention/embeddings in Q8_0, vLLM in BF16.
+  const oss20 = run('gpt-oss-20b', '4090_24', { quant: 'mxfp4', runtime: 'llamacpp', seq: 4096, outputTokens: 512, users: 1 });
+  range(oss20.perf.tps, 175, 240, 'gpt-oss-20b MXFP4 RTX 4090 llama.cpp u=1 ≈ 200–222 tok/s');
 
   // 6. Diffusion: Wan 2.2 TI2V-5B 32× spatial, FLUX MMDiT ratio, sequential peak VRAM
   const wan = run('wan-2-2-ti2v-5b', '4090_24', { quant: 'fp16', runtime: 'diffusers', imageWidth: 1280, imageHeight: 704, numFrames: 121, inferenceSteps: 50, guidanceScale: 5 });

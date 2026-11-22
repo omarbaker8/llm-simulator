@@ -74,7 +74,7 @@
     const k = g.key;
     const v = isApple(g) ? 'apple' : g.type === 'apu' ? 'apu' : g.vendor;
     const dc = g.category === 'datacenter';
-    const nv = { nvlink_gen6: ['r100'], nvlink_gen5: ['b100', 'b200', 'b300'], nvlink_gen4: ['h100', 'h200', 'h800', 'h20'], nvlink_gen3: ['a100', 'a800'], nvlink_gen2: ['rtx_a5000', 'rtx_a6000', 'a30', 'a40'], nvlink_bridge: ['3090'] };
+    const nv = { nvlink_gen6: ['r100'], nvlink_gen5: ['b100', 'b200', 'b300'], nvlink_gen4: ['h100', 'h200', 'h800', 'h20'], nvlink_gen3: ['a100', 'a800'], nvlink_bridge_a30: ['a30'], nvlink_bridge: ['3090', 'rtx_a5000', 'rtx_a6000', 'a40'] }; // Ampere bridges: 112.5 GB/s bidirectional (A30: 200)
     return Object.keys(L).filter((id) => {
       if (interOnly) return id.startsWith('infiniband') || id.startsWith('ethernet');
       if (v === 'apple') return id.startsWith('thunderbolt') || id.startsWith('ethernet');
@@ -89,7 +89,7 @@
   }
   function defaultLink(g) {
     const o = linkOptions(g).map((x) => x[0]);
-    return ['nvlink_gen6', 'nvlink_gen5', 'nvlink_gen4', 'nvlink_gen3', 'amd_xgmi', 'nvlink_gen2', 'thunderbolt5', 'pcie5', 'pcie4', 'ethernet100g'].find((x) => o.includes(x)) || o[0];
+    return ['nvlink_gen6', 'nvlink_gen5', 'nvlink_gen4', 'nvlink_gen3', 'amd_xgmi', 'nvlink_bridge_a30', 'nvlink_bridge', 'thunderbolt5', 'pcie5', 'pcie4', 'ethernet100g'].find((x) => o.includes(x)) || o[0];
   }
 
   /* ---------------- engine input ---------------- */
@@ -286,7 +286,7 @@
     if (diff) {
       h += `<div class="cols4">${field('Width', number('imageWidth', state.imageWidth, 64, 8192, 64))}${field('Height', number('imageHeight', state.imageHeight, 64, 8192, 64))}${field('Steps', number('inferenceSteps', state.inferenceSteps, 1, 200))}${field('Guidance', number('guidanceScale', state.guidanceScale, 0, 30, 0.5))}</div>`;
       h += `<div class="cols2">${m.task_type === 'video_generation' ? field('Frames', number('numFrames', state.numFrames, 1, 1024), 'Latent frames = 1 + ⌊(frames − 1) / 4⌋') : ''}${field('Batch size', number('diffBatch', state.diffBatch, 1, 64))}</div>`;
-      h += `<div class="toggles">${toggle('encoderOffload', 'Offload text encoders to CPU', state.encoderOffload)}${toggle('vaeTiling', 'VAE tiling', state.vaeTiling)}</div>`;
+      h += `<div class="toggles">${toggle('encoderOffload', 'Model CPU offload (idle models leave the GPU)', state.encoderOffload)}${toggle('vaeTiling', 'VAE tiling', state.vaeTiling)}</div>`;
     } else if (inf) {
       const steps = ctxSteps(maxCtx());
       const idx = steps.findIndex((v) => v >= state.seq);

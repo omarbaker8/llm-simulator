@@ -32,19 +32,24 @@
     q5_k_m: { label: 'Q5_K_M', bpw: 5.70, group: 'GGUF', gguf: true },
     q5_k_s: { label: 'Q5_K_S', bpw: 5.57, group: 'GGUF', gguf: true },
     q4_k_m: { label: 'Q4_K_M', bpw: 4.89, group: 'GGUF', gguf: true },
-    q4_k_s: { label: 'Q4_K_S', bpw: 4.66, group: 'GGUF', gguf: true },
-    q4_0:   { label: 'Q4_0', bpw: 4.66, group: 'GGUF', gguf: true },
-    iq4_xs: { label: 'IQ4_XS', bpw: 4.43, group: 'GGUF', gguf: true },
+    q4_k_s: { label: 'Q4_K_S', bpw: 4.67, group: 'GGUF', gguf: true },
+    q4_0:   { label: 'Q4_0', bpw: 4.64, group: 'GGUF', gguf: true },
+    iq4_xs: { label: 'IQ4_XS', bpw: 4.46, group: 'GGUF', gguf: true },
     q3_k_l: { label: 'Q3_K_L', bpw: 4.30, group: 'GGUF', gguf: true },
     q3_k_m: { label: 'Q3_K_M', bpw: 4.00, group: 'GGUF', gguf: true },
     q3_k_s: { label: 'Q3_K_S', bpw: 3.64, group: 'GGUF', gguf: true },
-    iq3_m:  { label: 'IQ3_M', bpw: 3.77, group: 'GGUF', gguf: true },
-    q2_k:   { label: 'Q2_K', bpw: 3.17, group: 'GGUF', gguf: true },
-    iq2_m:  { label: 'IQ2_M', bpw: 2.94, group: 'GGUF', gguf: true },
+    iq3_m:  { label: 'IQ3_M', bpw: 3.76, group: 'GGUF', gguf: true },
+    q2_k:   { label: 'Q2_K', bpw: 3.16, group: 'GGUF', gguf: true },
+    iq2_m:  { label: 'IQ2_M', bpw: 2.93, group: 'GGUF', gguf: true },
   };
-  // KV-cache element sizes in bytes (int4/fp4 include one fp16 scale per 32 values)
-  const KV_BYTES = { fp16: 2, fp8: 1, int4: 0.5625, nvfp4: 0.5625 };
-  const KV_LABELS = { fp16: 'FP16 / BF16', fp8: 'FP8', nvfp4: 'FP4', int4: 'INT4' };
+  // KV-cache element sizes in bytes. q8_0 / q4_0: 32-value blocks with an fp16 scale (llama.cpp, Ollama; MLX 8/4-bit group-64
+  // with scale+bias has the same 8.5 / 4.5 bits). nvfp4: E2M1 + one E4M3 scale per 16. int4: + fp16 scale per 32.
+  const KV_BYTES = { fp16: 2, fp8: 1, q8_0: 1.0625, nvfp4: 0.5625, q4_0: 0.5625, int4: 0.5625 };
+  const KV_LABELS = { fp16: 'FP16 / BF16', fp8: 'FP8', q8_0: 'Q8_0 / 8-bit (llama.cpp, Ollama, MLX)', nvfp4: 'FP4 (NVFP4)', q4_0: 'Q4_0 / 4-bit (llama.cpp, Ollama, MLX)', int4: 'INT4 (HF quantized cache)' };
+  // What each runtime actually accepts (vLLM CacheConfig: auto/fp8; TensorRT-LLM: fp8/nvfp4; llama.cpp --cache-type-k/v;
+  // Ollama OLLAMA_KV_CACHE_TYPE f16/q8_0/q4_0; mlx-lm --kv-bits; HF QuantizedCache). Weight formats likewise.
+  const KV_SUPPORT = { vllm: ['fp16', 'fp8'], sglang: ['fp16', 'fp8'], trtllm: ['fp16', 'fp8', 'nvfp4'], llamacpp: ['fp16', 'q8_0', 'q4_0'], ollama: ['fp16', 'q8_0', 'q4_0'], mlx: ['fp16', 'q8_0', 'q4_0'], hf: ['fp16', 'int4'] };
+  const WEIGHT_UNSUPPORTED = { llamacpp: ['fp8', 'int8', 'int4', 'nvfp4'], ollama: ['fp8', 'int8', 'int4', 'nvfp4'], mlx: ['fp8', 'nvfp4'], hf: ['nvfp4'] };
 
   /* ------------------------------------------------------------------ *
    * Inference runtimes. Every constant is visible here and in the page.
@@ -71,8 +76,8 @@
   const LINKS = {
     nvlink_gen6: { label: 'NVLink Gen 6 (3.6 TB/s)', bw: 1800, lat: 8 }, nvlink_gen5: { label: 'NVLink Gen 5 (1.8 TB/s)', bw: 900, lat: 8 },
     nvlink_gen4: { label: 'NVLink Gen 4 (900 GB/s)', bw: 450, lat: 10 }, nvlink_gen3: { label: 'NVLink Gen 3 (600 GB/s)', bw: 300, lat: 10 },
-    nvlink_gen2: { label: 'NVLink Gen 2 (300 GB/s)', bw: 150, lat: 12 }, nvlink_bridge: { label: 'NVLink Bridge (112 GB/s)', bw: 56, lat: 14 },
-    amd_xgmi: { label: 'AMD Infinity Fabric / xGMI (896 GB/s)', bw: 448, lat: 12 },
+    nvlink_gen2: { label: 'NVLink Gen 2 (300 GB/s)', bw: 150, lat: 12 }, nvlink_bridge_a30: { label: 'NVLink Bridge, A30 (200 GB/s)', bw: 100, lat: 14 }, nvlink_bridge: { label: 'NVLink Bridge (112.5 GB/s)', bw: 56, lat: 14 },
+    amd_xgmi: { label: 'AMD Infinity Fabric / xGMI (7 × 128 GB/s)', bw: 448, lat: 12, perPeer: 64 }, // fully connected: 64 GB/s each way per peer link
     pcie5: { label: 'PCIe 5.0 x16 (128 GB/s)', bw: 52, lat: 18 }, pcie4: { label: 'PCIe 4.0 x16 (64 GB/s)', bw: 26, lat: 20 }, pcie3: { label: 'PCIe 3.0 x16 (32 GB/s)', bw: 13, lat: 24 },
     infiniband_xdr: { label: 'InfiniBand XDR (800 Gb/s)', bw: 90, lat: 22 }, infiniband_ndr: { label: 'InfiniBand NDR (400 Gb/s)', bw: 45, lat: 22 },
     infiniband_hdr: { label: 'InfiniBand HDR (200 Gb/s)', bw: 22, lat: 25 }, infiniband_edr: { label: 'InfiniBand EDR (100 Gb/s)', bw: 11, lat: 28 },
@@ -109,12 +114,13 @@
     if (rtKey && !['vllm', 'sglang', 'trtllm', 'diffusers', 'tensorrt'].includes(rtKey)) return { x: 1, label: '' };
     if (q.fp8 && supportsFp8(g)) return { x: 2, label: 'FP8 tensor cores' };
     if (q === QUANTS.nvfp4 && isBlackwell(g)) {
-      // dense FP4 ÷ effective BF16: RTX 50-series 4× FP16-acc = 8× halved FP32-acc; B200 9/2.25=4; B300 15/2.25=6.67; R100 35/4=8.75
-      const x = /^50\d\d/.test(g.key) ? 8 : /^b300/.test(g.key) ? 6.67 : /^r100/.test(g.key) ? 8.75 : 4;
+      // dense FP4 ÷ effective BF16: RTX 50-series 4× FP16-acc = 8× halved FP32-acc; B200 9/2.25=4;
+      // HGX B300 13.5/2.25=6.0 (108 PF per 8 GPUs; the 15 PF figure is the 1400 W GB300); R100 35/4=8.75
+      const x = /^50\d\d/.test(g.key) ? 8 : /^b300/.test(g.key) ? 6.0 : /^r100/.test(g.key) ? 8.75 : 4;
       return { x, label: 'NVFP4 tensor cores' };
     }
     if (q === QUANTS.mxfp4 && supportsMxfp4(g)) {
-      const x = /^50\d\d/.test(g.key) ? 8 : /^b300/.test(g.key) ? 6.67 : /^r100/.test(g.key) ? 8.75 : 4;
+      const x = /^50\d\d/.test(g.key) ? 8 : /^b300/.test(g.key) ? 6.0 : /^r100/.test(g.key) ? 8.75 : 4;
       return { x, label: 'MXFP4 tensor cores' };
     }
     return { x: 1, label: '' };
@@ -145,7 +151,8 @@
   function autoRuntime(g, quant) {
     if (QUANTS[quant]?.gguf) return g.category === 'datacenter' ? 'llamacpp' : 'ollama';
     if (isApple(g)) return 'mlx';
-    if (g.type === 'apu') return 'llamacpp';
+    // APUs: llama.cpp for GGUF / MXFP4 GGUF; safetensors formats (AWQ, FP8…) need a PyTorch engine.
+    if (g.type === 'apu') return quant === 'mxfp4' || quant === 'fp16' ? 'llamacpp' : g.vendor === 'nvidia' ? 'vllm' : 'hf';
     return 'vllm';
   }
 
@@ -194,6 +201,12 @@
         f = fCand;
         routed = clamp((P - A) / (1 - f), 0, P);
         shared = P - routed;
+        // The shared part can never be smaller than embeddings + softmax-attention projections. Some published "active"
+        // counts exclude the input embedding (gpt-oss, MiniMax-M2), which would otherwise push attention into the routed pool.
+        const linL = m.linear_layer_count != null ? m.linear_layer_count : (m.uses_linear_attention ? Math.round(L * (m.linear_attention_ratio ?? 0.75)) : 0);
+        const softLayers = m.attention_layer_count != null ? m.attention_layer_count : Math.max(0, L - linL);
+        const sharedFloor = Math.min(P, embedParams + softLayers * attnParams);
+        if (shared < sharedFloor) { shared = sharedFloor; routed = P - shared; }
       } else {
         routed = P;
         shared = 0;
@@ -203,7 +216,17 @@
     const ffnActive = moe ? (m.moe_ffn_intermediate_size || ffn) * ((m.num_of_active_experts || 2) + (m.num_of_shared_experts || 0)) : ffn;
     // Loaded but never streamed per decoded token: vision encoders, N-gram lookup tables (Qwen3.8-Flash-Next).
     const unread = num(m.num_of_unread_params) * 1e9;
-    return { P, A, h, L, heads, hd, kvh, V, att, mla, moe, f, routed, shared, tied, embedParams, ffn, ffnActive, attnParams, unread,
+    // Parameter classes: output head (lm_head, = token table when tied), untied input table (a lookup, never a matmul),
+    // softmax-attention projections, and the rest (FFN / experts / norms / linear-attention mixers).
+    const linLayers = m.linear_layer_count != null ? m.linear_layer_count : (m.uses_linear_attention ? Math.round(L * (m.linear_attention_ratio ?? 0.75)) : 0);
+    const softL = m.attention_layer_count != null ? m.attention_layer_count : Math.max(0, L - linLayers);
+    const outP = V ? Math.min(V * h, P) : 0;
+    const inP = V && !tied ? Math.min(V * h, Math.max(0, P - outP)) : 0;
+    const attnIn = mla ? h * (1536 + 576) : h * heads * hd + 2 * h * kvh * hd; // projections whose rows have length h
+    // Matmul FLOPs per token use active params minus the untied input lookup. For MoE, shared + routed·k/E is the
+    // active set (it equals A when the published count includes the input table, and corrects it when it does not).
+    const Amm = moe ? Math.max(0, shared - inP) + routed * f : Math.max(0, P - inP);
+    return { P, A, Amm, h, L, heads, hd, kvh, V, att, mla, moe, f, routed, shared, tied, embedParams, ffn, ffnActive, attnParams, attnIn, softL, outP, inP, unread,
       inferred: { h: !m.hidden_dim_size, L: !m.num_of_layers, heads: !m.num_attention_heads, hd: !m.attention_head_dim, kvh: !m.num_key_value_heads, ffn: !ffnKnown, V: !m.vocab_size } };
   }
 
@@ -213,29 +236,57 @@
     return G.unread ? G.unread * (q.bpw >= 16 ? q.bpw / 8 : 2) : 0;
   }
 
-  /** Params kept at 16-bit in low-bit checkpoints (embeddings + MoE FP4 attention projections). */
-  function fp16KeptParams(G, quant, rtKey) {
-    const q = QUANTS[quant] || QUANTS.fp16;
-    if (rtKey === 'mlx' && quant === 'int4') return { emb: 0, attn: 0, excessGgufEmb: 0 };
-    const emb = q.emb16 ? Math.min(G.embedParams, G.P) : 0;
-    // Production MoE FP4 checkpoints (gpt-oss MXFP4, DeepSeek-R1 NVFP4) keep attention projections in BF16.
-    const attn = (quant === 'mxfp4' || quant === 'nvfp4') && G.moe ? Math.min(G.L * G.attnParams, Math.max(0, G.P - emb)) : 0;
-    // GGUF bpw constants are calibrated on Llama-3-8B (~13.1% embeddings); small large-vocab models (Gemma-3-1B, Qwen3-0.6B)
-    // keep a larger share of parameters in Q6_K/Q8_0 token embeddings.
-    const excessGgufEmb = q.gguf && q.bpw < 8.5 && G.P > 0 ? Math.max(0, G.embedParams - 0.135 * G.P) : 0;
-    return { emb, attn, excessGgufEmb };
+  /* GGUF tensor layout (llama.cpp llama_tensor_get_type):
+   *  - output.weight (or the tied token table) is stored as Q6_K for every K/I-quant, Q8_0 for Q8_0;
+   *  - K-quants pack 256-value super-blocks, so tensors whose rows (input dim) are not a multiple of 256 fall back to
+   *    32-value legacy types (Q2_K…IQ4_XS → IQ4_NL, Q4_K → Q5_0, Q5_K → Q5_1, Q6_K → Q8_0). E.g. Gemma-3-1B (h = 1152).
+   * The bpw table is the llama.cpp README file average on Llama-3.1-8B, so the body rate is backed out from it. */
+  const GGUF_FALLBACK_BPW = { q6_k: 8.5, q5_k_m: 6.0, q5_k_s: 6.0, q4_k_m: 5.5, q4_k_s: 5.5, iq4_xs: 4.5, q3_k_l: 4.5, q3_k_m: 4.5, q3_k_s: 4.5, iq3_m: 4.5, q2_k: 4.5, iq2_m: 4.5 };
+  const ggufOutBpw = (quant) => (quant === 'q8_0' ? 8.5 : 6.5625);
+  function ggufBodyBpw(quant) {
+    const q = QUANTS[quant], pRef = 8.03e9, outRef = 128256 * 4096;
+    return (pRef * q.bpw - outRef * ggufOutBpw(quant)) / (pRef - outRef);
   }
 
-  /** Bytes of weights for a precision; embeddings (and MoE FP4 attention) stay 16-bit for non-GGUF low-bit formats. */
-  function weightBytes(G, quant, rtKey) {
+  /** Byte rates per parameter class. Params split into output head (outP), untied input table (inP), softmax-attention
+   *  projections (attnP) and the rest (FFN / experts / norms). One function drives both memory and decode reads. */
+  function paramRates(G, quant, rtKey) {
     const q = QUANTS[quant] || QUANTS.fp16;
-    const ub = unreadBytes(G, quant);
-    // MLX 4-bit (affine group-64: 4-bit + fp16 scale + fp16 bias = 4.5 bpw across all weights incl. embeddings).
-    if (rtKey === 'mlx' && quant === 'int4') return G.P * 4.5 / 8 + ub;
-    const kept = fp16KeptParams(G, quant, rtKey);
-    const full16 = kept.emb + kept.attn;
-    const excessB = kept.excessGgufEmb * (8.5 - q.bpw) / 8;
-    return (G.P - full16) * q.bpw / 8 + full16 * 2 + excessB + ub;
+    const outP = G.outP, inP = G.inP;
+    const attnP = Math.min(G.softL * G.attnParams, Math.max(0, G.P - outP - inP));
+    const restP = Math.max(0, G.P - outP - inP - attnP);
+    const ggufRt = rtKey === 'llamacpp' || rtKey === 'ollama';
+    // MLX 4-bit: affine group-64 (4-bit + fp16 scale + fp16 bias) = 4.5 bpw on every weight, embeddings included.
+    if (rtKey === 'mlx' && quant === 'int4') {
+      const r = 4.5 / 8;
+      return { outP, inP, attnP, restP, outRate: r, inRate: r, attnRate: r, restRate: r, note: 'MLX 4-bit (group 64) = 4.5 bpw on all weights' };
+    }
+    if (q.gguf) {
+      const body = ggufBodyBpw(quant);
+      const misaligned = G.h % 256 !== 0 && GGUF_FALLBACK_BPW[quant];
+      const fb = misaligned ? GGUF_FALLBACK_BPW[quant] : body;
+      const attnFrac = G.attnParams > 0 ? Math.min(1, G.attnIn / G.attnParams) : 0;
+      const attnBpw = attnFrac * fb + (1 - attnFrac) * body;            // q/k/v rows have length h; o does not
+      const restBpw = (2 / 3) * fb + (1 / 3) * body;                     // gate/up rows have length h; down does not
+      const outBpw = G.h % 256 !== 0 ? 8.5 : ggufOutBpw(quant);                 // Q6_K output also needs 256-aligned rows
+      return { outP, inP, attnP, restP, outRate: outBpw / 8, inRate: fb / 8, attnRate: attnBpw / 8, restRate: restBpw / 8,
+        note: `GGUF: output tensor ${outBpw === 8.5 ? 'Q8_0' : 'Q6_K'}${misaligned ? `, rows of length ${G.h} (not a multiple of 256) fall back to ${fb}-bpw legacy blocks` : ''}` };
+    }
+    const r = q.bpw / 8;
+    // Non-GGUF low-bit checkpoints keep embeddings / lm_head in 16-bit; the MXFP4 GGUF keeps them (and attention) in Q8_0.
+    const keptRate = ggufRt && quant === 'mxfp4' ? 8.5 / 8 : 2;
+    const keptLabel = keptRate === 2 ? '16-bit' : 'Q8_0';
+    const embRate = q.emb16 ? keptRate : r;
+    // Production MoE FP4 checkpoints (gpt-oss MXFP4, DeepSeek-R1 NVFP4) keep attention projections unquantized too.
+    const attnKept = (quant === 'mxfp4' || quant === 'nvfp4') && G.moe;
+    return { outP, inP, attnP, restP, outRate: embRate, inRate: embRate, attnRate: attnKept ? keptRate : r, restRate: r,
+      note: q.emb16 ? `embeddings${attnKept ? ' + attention' : ''} kept at ${keptLabel}` : '' };
+  }
+
+  /** Bytes of weights for a precision (all parameter classes + loaded-but-unread vision / lookup params). */
+  function weightBytes(G, quant, rtKey) {
+    const p = paramRates(G, quant, rtKey);
+    return p.outP * p.outRate + p.inP * p.inRate + p.attnP * p.attnRate + p.restP * p.restRate + unreadBytes(G, quant);
   }
 
   /** KV-cache layout: how many layers keep full / windowed / constant-size state. */
@@ -252,16 +303,25 @@
     // Attention-compute layers (cross-layer KV sharing skips KV storage, not attention compute)
     const swaAttn = swaOk ? Math.round(totalSoft * (m.sliding_window_ratio ?? 1)) : 0;
     const fullAttn = totalSoft - swaAttn;
-    const kvComp = m.kv_compression && m.kv_compression > 1 ? m.kv_compression : 1;
-    let elems, fullElems, kind;
+    // Sparse global attention (DeepSeek-V3.2 / GLM-5 DSA, DeepSeek-V4 CSA, V4.1 CSA2): a lightning indexer scores every
+    // cached entry and the main attention reads only the top-k. V4 additionally stores global KV compressed per layer:
+    // kv_compress_layers = { ratio: layers } (V4-Flash config compress_ratios: 21 layers ÷4 (CSA, sparse) + 20 ÷128 (HCA, dense)).
+    const sparse = G.att === 'dsa' || G.att === 'csa2';
+    let groups = null, full2 = full;
+    if (m.kv_compress_layers) {
+      groups = Object.entries(m.kv_compress_layers).map(([r, n]) => ({ r: Math.max(1, Number(r)), n: Number(n) })).filter((x) => x.n > 0);
+      full2 = groups.reduce((a, x) => a + x.n, 0);                     // layers that store global KV
+    } else if (sparse) groups = [{ r: 1, n: full }];
+    const storeFrac = groups ? groups.reduce((a, x) => a + x.n / x.r, 0) / Math.max(1, groups.reduce((a, x) => a + x.n, 0)) : 1; // stored entries per token per layer
+    let elems, fullElems, kind, baseElems = 0, lat = 0;
     const globalKvh = m.global_kv_heads || G.kvh;
     const globalHd = m.global_head_dim || G.hd;
     if (G.mla) {
-      const lat = m.kv_latent_dim || 512;
-      const baseElems = m.no_rope_kv ? lat : (lat >= 576 ? lat : lat + 64); // compressed latent (+ decoupled RoPE key unless no_rope_kv)
-      elems = baseElems / kvComp;
-      fullElems = elems;
-      kind = kvComp > 1 ? `MLA latent ${baseElems} ÷ ${kvComp}× compression` : m.no_rope_kv ? `MLA latent ${elems} (no RoPE key)` : `MLA latent ${elems}`;
+      lat = m.kv_latent_dim || 512;
+      baseElems = m.no_rope_kv ? lat : (lat >= 576 ? lat : lat + 64); // compressed latent (+ decoupled RoPE key unless no_rope_kv)
+      elems = baseElems;
+      fullElems = baseElems * storeFrac;
+      kind = storeFrac < 1 ? `MLA latent ${baseElems} at ${groups.map((x) => `${x.n} layers ÷${x.r}`).join(' + ')}` : m.no_rope_kv ? `MLA latent ${elems} (no RoPE key)` : `MLA latent ${elems}`;
     } else {
       elems = 2 * G.kvh * G.hd;
       fullElems = (m.attention_k_eq_v ? 1 : 2) * globalKvh * globalHd;
@@ -269,8 +329,12 @@
         ? `sliding 2×${G.kvh}×${G.hd}, global ${m.attention_k_eq_v ? '1' : '2'}×${globalKvh}×${globalHd}`
         : `${m.attention_k_eq_v && !swa ? '1' : '2'} × ${G.kvh} KV heads × ${G.hd} dim`;
     }
-    const rawIndexer = G.att === 'dsa' || G.att === 'csa2' ? (m.indexer_dim || 128) : (m.indexer_dim || 0); // lightning-indexer keys (FP8, 1 byte)
-    const indexer = rawIndexer / kvComp;
+    // Indexer keys per entry: 128 FP8 values + one FP32 scale = 132 B (DeepSeek-V3.2); stored for every compressed entry.
+    const idxRaw = m.indexer_dim != null ? m.indexer_dim : (sparse ? 132 : 0);
+    // GLM-5.2/5.3 run the indexer every index_topk_freq-th layer and reuse its top-k elsewhere (keys + FLOPs ÷ freq).
+    const idxFreq = Math.max(1, m.index_topk_freq || 1);
+    const indexer = idxRaw * storeFrac / idxFreq;
+    const topk = m.index_topk || 2048, idxHeads = m.index_n_heads || 64, idxDim = m.index_head_dim || 128;
     // Per-layer recurrent state (bf16), independent of length. With published Gated-DeltaNet / Mamba-2 geometry:
     // value_heads × key_dim × value_dim, plus the short-conv state (2·key_heads·key_dim + value_heads·value_dim) × (kernel − 1).
     // Without it, fall back to attention heads × head_dim².
@@ -280,7 +344,33 @@
       linState = (vh * dk * dv + (2 * kh * dk + vh * dv) * (ck - 1)) * 2;
       linKind = `${vh} value heads × ${dk}×${dv} state + conv (${2 * kh * dk + vh * dv} ch × ${ck - 1}) × 2 B`;
     } else if (lin) { linState = G.heads * G.hd * G.hd * 2; linKind = `${G.heads} heads × ${G.hd}² × 2 B (estimated)`; }
-    return { full, swa, fullAttn, swaAttn, lin, window: m.sliding_window_size || 0, elems, fullElems, globalKvh, globalHd, kvComp, kind, indexer, linState, linKind };
+    return { full: full2, swa, fullAttn, swaAttn, lin, window: m.sliding_window_size || 0, elems, fullElems, globalKvh, globalHd, kind, indexer, linState, linKind,
+      sparse, groups, topk, idxRaw, idxHeads, idxDim, idxFreq, baseElems, lat, mla: G.mla };
+  }
+
+  /** Global-attention entries one query reads per full-attention layer at context T (decode). */
+  function attendedAt(K, T) {
+    if (!K.groups) return T;
+    let num = 0, den = 0;
+    for (const x of K.groups) { const tc = T / x.r; num += x.n * (K.sparse && x.r < 64 ? Math.min(K.topk, tc) : tc); den += x.n; }
+    return den ? num / den : T;
+  }
+  /** Σ over a causal prompt of T tokens of the entries each query attends, per full-attention layer (prefill). */
+  function attendedPairs(K, T) {
+    if (!K.groups) return T * T / 2;
+    let num = 0, den = 0;
+    for (const x of K.groups) {
+      const cap = K.sparse && x.r < 64 ? K.topk : Infinity, lim = cap * x.r;
+      num += x.n * (T <= lim ? T * T / (2 * x.r) : cap * T - cap * cap * x.r / 2); den += x.n;
+    }
+    return den ? num / den : T * T / 2;
+  }
+  /** Indexer entries scored per query per full-attention layer (sparse attention only). */
+  function indexedAt(K, T) {
+    if (!K.sparse || !K.groups) return 0;
+    let num = 0, den = 0;
+    for (const x of K.groups) { num += x.n * (x.r < 64 ? T / x.r : 0); den += x.n; }
+    return den ? num / den / (K.idxFreq || 1) : 0;
   }
   /** KV bytes for ONE sequence holding `T` tokens. */
   function kvBytesSeq(K, T, kvB) {
@@ -378,13 +468,16 @@
 
     // ---- weights ----
     const ub = unreadBytes(G, inp.quant);
-    const kept = fp16KeptParams(G, inp.quant, rtKey);
+    const PR = paramRates(G, inp.quant, rtKey);
     const wB = weightBytes(G, inp.quant, rtKey);
-    const effBpw = rtKey === 'mlx' && inp.quant === 'int4' ? 4.5 : q.bpw;
-    T.push({ g: 'Memory', k: 'Weights', f: `${fmtP(G.P)} params × ${effBpw} bits ÷ 8${kept.emb ? ` (embeddings ${fmtP(kept.emb)}${kept.attn ? ` + attention ${fmtP(kept.attn)}` : ''} kept at 16-bit)` : ''}${kept.excessGgufEmb ? ` (+ Q8_0 large-vocab embedding adjustment)` : ''}${G.unread ? ` + ${fmtP(G.unread)} vision / lookup params at ${q.bpw >= 16 ? q.bpw : 16}-bit (loaded, not read per token)` : ''}`, v: gib(wB) });
+    const effBpw = PR.restRate * 8;
+    T.push({ g: 'Memory', k: 'Weights', f: `${fmtP(G.P)} params: output ${fmtP(PR.outP)} × ${(PR.outRate * 8).toFixed(2)} + ${PR.inP ? `input table ${fmtP(PR.inP)} × ${(PR.inRate * 8).toFixed(2)} + ` : ''}attention ${fmtP(PR.attnP)} × ${(PR.attnRate * 8).toFixed(2)} + rest ${fmtP(PR.restP)} × ${(PR.restRate * 8).toFixed(2)} bits ÷ 8${PR.note ? ` (${PR.note})` : ''}${G.unread ? ` + ${fmtP(G.unread)} vision / lookup params at ${q.bpw >= 16 ? q.bpw : 16}-bit (loaded, not read per token)` : ''}`, v: gib(wB) });
 
     // ---- KV cache ----
-    const K = kvLayout(m, G);
+    const K0 = kvLayout(m, G);
+    // llama.cpp / Ollama allocate recurrent (Mamba / DeltaNet) states as F32 (llama-memory-recurrent: r/s caches), 2× bf16.
+    const recF32 = (rtKey === 'llamacpp' || rtKey === 'ollama') && K0.lin > 0;
+    const K = recF32 ? { ...K0, linState: K0.linState * 2, linKind: K0.linKind.replace('× 2 B', '× 4 B (F32 in llama.cpp)') } : K0;
     const kvPerTok = K.full * (K.fullElems * kvB + K.indexer) + K.swa * (K.elems * kvB + K.indexer);
     const kvSeq = kvBytesSeq(K, seq, kvB);
     const kvRepObj = kvBytesReplica(K, promptTok, outTok, uRep, batch, sharedTok, kvB);
@@ -409,10 +502,12 @@
     // ---- speculative decoding draft ----
     let draftB = 0, draftKvRep = 0;
     const draftP = inp.spec ? Math.min(inp.specDraft, G.P / 1e9) * 1e9 : 0;
+    const draftKvRatio = draftP > 0 ? Math.sqrt(draftP / G.P) : 0;
+    const draftLayers = draftP > 0 ? Math.max(1, Math.round(G.L * Math.cbrt(draftP / G.P))) : 0;
     if (inp.spec) {
       draftB = draftP * effBpw / 8;
-      draftKvRep = kvRep * (draftP / G.P);
-      T.push({ g: 'Memory', k: 'Draft model', f: `${fmtP(draftP)} × ${effBpw} bits ÷ 8 + KV ≈ target KV × ${(draftP / G.P).toFixed(3)}`, v: gib(draftB + draftKvRep) });
+      draftKvRep = kvRep * draftKvRatio;
+      T.push({ g: 'Memory', k: 'Draft model', f: `${fmtP(draftP)} × ${effBpw.toFixed(2)} bits ÷ 8 + KV ≈ target KV × √(${fmtP(draftP)} ÷ ${fmtP(G.P)}) = × ${draftKvRatio.toFixed(3)} (KV scales with layers × width, not params)`, v: gib(draftB + draftKvRep) });
     }
 
     // ---- offloading ----
@@ -452,21 +547,36 @@
     T.push({ g: 'Memory', k: 'Runtime overhead', f: `${R.label}: context ${R.ctxGiB} GiB + graphs ${R.graphGiB} GiB + ${Math.round(R.frag * 100)}% fragmentation of KV+activations${commGpu ? ' + 0.25 GiB NCCL' : ''} (per GPU)`, v: gib(ctxGpu + graphGpu + fragGpu + commGpu) });
 
     const perGpu = segsGpu.reduce((a, s) => a + s[2], 0);
-    const totalUse = perGpu * Lyt.n;
-    const cap = usable.v * GiB;
+    // Cluster total: every replica holds the weights, but each holds only its own users' KV (uneven splits handled);
+    // GPUs left over when n is not a multiple of TP × PP are idle and not counted.
+    const nonKvGpu = perGpu - kvGpu - fragGpu;
+    const repGpuBytes = (u) => {
+      const kv = offKvFlag || u <= 0 ? 0 : kvGpuFrom(kvBytesReplica(K, promptTok, outTok, u, batch, u > 1 ? Math.round(promptTok * clamp(inp.prefixShare, 0, 1)) : 0, kvB));
+      return shards * (nonKvGpu + kv + R.frag * (kv + actGpu));
+    };
+    const totalUse = rU * repGpuBytes(qU + 1) + (replicas - rU) * repGpuBytes(qU);
+    // Serving engines cap their own pool: vLLM gpu_memory_utilization and SGLang mem_fraction_static default to 0.90 of device
+    // memory (raise the flag to use more); TensorRT-LLM gives the KV cache 90% of the memory left after weights/activations.
+    let cap = usable.v * GiB, capNote = `${usable.v.toFixed(1)} GiB usable (${usable.note})`;
+    if (rtKey === 'vllm' || rtKey === 'sglang') {
+      cap = 0.9 * usable.v * GiB;
+      capNote = `${rtKey === 'vllm' ? 'vLLM gpu_memory_utilization' : 'SGLang mem_fraction_static'} 0.90 × ${usable.v.toFixed(1)} GiB (${usable.note})`;
+    } else if (rtKey === 'trtllm') {
+      cap = usable.v * GiB - 0.1 * Math.max(0, usable.v * GiB - (perGpu - kvGpu));
+      capNote = `TensorRT-LLM: KV may use 90% of the ${gib(Math.max(0, usable.v * GiB - (perGpu - kvGpu)))} left after weights & buffers`;
+    }
     const pct = (perGpu / cap) * 100;
-    T.push({ g: 'Memory', k: 'Per-GPU usage', f: `sum of the rows above ÷ ${usable.v.toFixed(1)} GiB usable (${usable.note})`, v: `${gib(perGpu)} (${pct.toFixed(1)}%)` });
+    T.push({ g: 'Memory', k: 'Per-GPU usage', f: `sum of the rows above ÷ ${gib(cap)} budget — ${capNote}`, v: `${gib(perGpu)} (${pct.toFixed(1)}%)` });
 
     // ---- decode step time ----
     const avgOut = outTok / 2;
     const avgCtx = promptTok + avgOut;
-    const embInShared = Math.min(G.embedParams, G.shared);
-    const embRate = kept.emb ? 2 : effBpw / 8;
-    const inEmb = G.tied ? 0 : Math.min(G.V * G.h, embInShared) * embRate; // untied input table: only looked up, never read in full
-    const embB = embInShared * embRate + kept.excessGgufEmb * (8.5 - q.bpw) / 8;
-    // Attention projections kept at 16-bit (e.g. MoE MXFP4/NVFP4) are always 100% active on every decode token.
-    const attn16Extra = kept.attn * Math.max(0, 2 - effBpw / 8);
-    const sharedB = Math.max(0, G.shared - embInShared) * effBpw / 8 + embB - inEmb + attn16Extra;
+    // Weights streamed per step: output head + attention + the rest; the untied input table is only gathered (one row
+    // per token), never read in full. MoE: the shared bucket holds output, input table and attention, so
+    // shared bytes = outP·outRate + attnP·attnRate + (shared − outP − inP − attnP)·restRate.
+    const inEmb = PR.inP * PR.inRate;
+    const sharedRestP = Math.max(0, G.shared - PR.outP - PR.inP - PR.attnP);
+    const sharedB = PR.outP * PR.outRate + PR.attnP * PR.attnRate + sharedRestP * PR.restRate;
     const MOE_KERNEL_EFF = 0.75; // fused-MoE GEMVs reach ~75% of dense-GEMV bandwidth
     const expertSlice = G.moe ? (m.moe_ffn_intermediate_size || G.ffn) / Lyt.tp : G.ffn;
     const sliceEffBase = G.moe && Lyt.tp > 1 && expertSlice < 1024 ? clamp(0.32 + 0.68 * (expertSlice / 1024), 0.32, 1) : 1;
@@ -484,19 +594,21 @@
     const wRead = G.moe ? sharedB + routedB : Math.max(0, wB - ub - inEmb);
     const wReadEff = G.moe ? sharedB + routedB / moeEff : wRead; // bandwidth-equivalent bytes
 
-    // KV bytes read per micro-batch decode step. DSA/CSA2 sparse attention reads full indexer + top-k (2048) latent tokens.
+    // KV bytes read per micro-batch decode step. Sparse attention (DSA / CSA): the indexer scans every stored key, the main
+    // attention gathers only the top-k entries (compressed HCA layers are read densely). Recurrent states are read AND
+    // written back every step.
     const kvReadFor = (uCount, nBatch) => {
       const shAvg = uCount > 1 ? Math.min(sharedTok, promptTok) : 0;
       const obj = kvBytesReplica(K, promptTok, avgOut, uCount, nBatch, shAvg, kvB);
-      if ((G.att === 'dsa' || G.att === 'csa2') && avgCtx > 2048) {
-        const topK = 2048;
+      const linPart = obj.linPart * 2;
+      if (K.groups) {
         const fullTok = shAvg + uCount * (promptTok - shAvg) + uCount * nBatch * avgOut;
-        const sparseTok = Math.min(topK, avgCtx) * uCount * nBatch;
-        const fEl = K.fullElems ?? K.elems;
-        const fullPart = K.full * (sparseTok * fEl * kvB + fullTok * K.indexer);
-        return { total: fullPart + obj.swaPart + obj.linPart, fullPart, swaPart: obj.swaPart, linPart: obj.linPart };
+        const stored = fullTok * (K.fullElems / Math.max(1e-9, K.baseElems || K.fullElems));   // stored entries (sharing-aware)
+        const main = Math.min(attendedAt(K, avgCtx) * uCount * nBatch, stored);
+        const fullPart = K.full * (main * (K.baseElems || K.fullElems) * kvB + fullTok * K.indexer);
+        return { total: fullPart + obj.swaPart + linPart, fullPart, swaPart: obj.swaPart, linPart };
       }
-      return obj;
+      return { total: obj.fullPart + obj.swaPart + linPart, fullPart: obj.fullPart, swaPart: obj.swaPart, linPart };
     };
     const kvReadObj = kvReadFor(uMicro, batch);
     const kvRead = kvReadObj.total;
@@ -504,18 +616,34 @@
     const gpuW = wReadEff * (1 - offFrac);
     // Per-stage time (divided by Lyt.pp; when Lyt.pp = 1 this is the full model step).
     const tMemStage = (gpuW / (Lyt.tp * Lyt.pp) + kvReadGpu / Lyt.pp) / (bw * bwEff);
-    const sparseAttnCtx = (G.att === 'dsa' || G.att === 'csa2') ? Math.min(avgCtx, 2048) : avgCtx;
-    const flopsTok = 2 * (G.moe ? G.A : G.P) + 4 * (K.fullAttn * sparseAttnCtx + K.swaAttn * Math.min(avgCtx, K.window || avgCtx)) * G.heads * G.hd;
+    // FLOPs per decoded token: matmuls 2 × active params (untied input lookup excluded) + attention over the cache.
+    // Decode attention per head per entry: standard 4·d (QKᵀ + PV); MLA runs absorbed in decode: 2·(latent+rope) + 2·latent.
+    // Full-attention layers use the global head size when it differs (Gemma 4). The sparse indexer scores every entry
+    // (2 · index_heads · index_dim FLOPs, run in FP8 on FP8-capable GPUs).
+    const hfFullDec = K.mla ? 2 * K.baseElems + 2 * K.lat : 4 * (m.global_head_dim || G.hd);
+    const linFlopsTok = 2 * G.Amm;
+    const attnFlopsDec = (T) => G.heads * (K.fullAttn * attendedAt(K, T) * hfFullDec + K.swaAttn * Math.min(T, K.window || T) * 4 * G.hd);
+    const idxFlopsDec = (T) => K.fullAttn * indexedAt(K, T) * 2 * K.idxHeads * K.idxDim;
+    const flopsTok = linFlopsTok + attnFlopsDec(avgCtx) + idxFlopsDec(avgCtx);
     const lowP = lowPrecisionX(q, g, rtKey);
+    const idxX = supportsFp8(g) ? 2 : 1;
+    // Low-precision tensor cores (W8A8 FP8 / W4A4 FP4) speed up the weight matmuls only; attention runs in BF16.
+    const effFlopsTok = linFlopsTok / lowP.x + attnFlopsDec(avgCtx) + idxFlopsDec(avgCtx) / idxX;
     // TP > 1 incurs small-GEMM slicing / sync efficiency loss (~2% per doubling of TP).
     const tpCompEff = Lyt.tp > 1 ? 1 / (1 + 0.04 * Math.log2(Lyt.tp)) : 1;
-    const tCompStage = (flopsTok * sMicro / Lyt.pp) / (tfl.v * lowP.x * 1e12 * Lyt.tp * tpCompEff * 0.5);
+    const tCompStage = (effFlopsTok * sMicro / Lyt.pp) / (tfl.v * 1e12 * Lyt.tp * tpCompEff * 0.5);
     // Per-layer launch/dispatch overhead: MoE launches router+top-k+permute+grouped-GEMM; multi-GPU MoE + MLA add dispatch/combine sync.
     const moeMult = G.moe ? (Lyt.tp > 1 ? (G.mla ? 36 : 5.5) : 2.5) : 1;
-    const layerUsEff = R.layerUs * moeMult;
+    // llama.cpp / Ollama on datacenter GPUs: ≈34 µs per layer per token (scoreboard #15013, Llama-2-7B Q4_0: H100 268 and
+    // A100 191 tok/s both imply +0.78 ms per token over the bandwidth time at 32 layers).
+    const ggufDc = (rtKey === 'llamacpp' || rtKey === 'ollama') && g.category === 'datacenter';
+    const layerUsEff = (ggufDc ? 34 : R.layerUs) * moeMult;
     const tFixedStage = (R.stepMs / Lyt.pp + (G.L / Lyt.pp) * layerUsEff / 1000) / 1000;
-    const tpLink = LINKS[inp.cluster && Lyt.tp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
-    const ppLink = LINKS[inp.cluster && Lyt.tp * Lyt.pp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
+    const tpLink0 = LINKS[inp.cluster && Lyt.tp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
+    // Point-to-point meshes (AMD xGMI): a GPU reaches its TP peers over (TP − 1) separate links, not the whole fabric.
+    const tpLink = tpLink0.perPeer ? { ...tpLink0, bw: Math.min(tpLink0.bw, tpLink0.perPeer * Math.max(1, Lyt.tp - 1)) } : tpLink0;
+    const ppLink0 = LINKS[inp.cluster && Lyt.tp * Lyt.pp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
+    const ppLink = ppLink0.perPeer ? { ...ppLink0, bw: ppLink0.perPeer } : ppLink0;   // a PP hop is one point-to-point transfer
     // NCCL AllReduce achieves ~70% of unidirectional link peak on multi-GPU collectives.
     const tpCommStageFor = (tokensPerRank, layersInStage) => {
       if (Lyt.tp <= 1) return 0;
@@ -531,7 +659,7 @@
     const offBw = inp.offloadTarget === 'nvme' ? offTarget.bw : cpuRun ? offTarget.bw * 0.7 : isApple(g) ? offTarget.bw : PCIE_HOST_BW;
     let tOff = 0;
     if (offFrac > 0) {
-      tOff = wRead * offFrac / (offBw * 1e9);
+      tOff = wRead * offFrac / (offBw * 1e9 * (cpuRun ? 1 : Lyt.tp));
       T.push({ g: 'Speed', k: 'Offloaded layers', f: `${fmtBytes(wRead * offFrac)} read per token from ${offTarget.label} at ${offBw} GB/s${cpuRun ? ' (CPU executes these layers)' : ' (streamed to the GPU)'}`, v: ms(tOff) });
     }
     if (offKvFlag) tOff += kvRead / (PCIE_HOST_BW * 1e9);
@@ -544,7 +672,7 @@
     const tStepDecode = (tStage * Lyt.pp) / ppEff;
     T.push({ g: 'Speed', k: 'Bytes read per step', f: `${G.moe ? `weights: shared ${fmtBytes(sharedB)} + routed ${fmtBytes(G.routed * effBpw / 8)} × (1 − (1 − ${G.f.toFixed(3)})^${sMicro.toFixed(sMicro % 1 ? 1 : 0)}) [MoE kernels at ${Math.round(moeEff * 100)}% eff.] = ` : 'weights '}${fmtBytes(wRead)} + KV at avg context ${Math.round(avgCtx).toLocaleString()} × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} seq ${fmtBytes(kvRead)}`, v: fmtBytes(wRead + kvRead) });
     T.push({ g: 'Speed', k: 'Memory time', f: `(weights ÷ ${Lyt.tp} + KV ÷ ${kvShard}) ÷ (${g.bandwidth_gbs} GB/s × ${bwEff.toFixed(2)} efficiency (${R.label} ${R.bwEff}${dBw.v < 1 ? ` × device ${dBw.v}` : ''}${dcGgufBw < 1 ? ` × DC ${dcGgufBw}` : ''}))`, v: ms(tMem) });
-    T.push({ g: 'Speed', k: 'Compute time', f: `${(flopsTok / 1e9).toFixed(1)} GFLOP/token × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} ÷ (${tfl.v.toFixed(1)} TFLOPS${lowP.x > 1 ? ` × ${lowP.x} ${lowP.label}` : ''} × 0.5)  — ${tfl.note}`, v: ms(tComp) });
+    T.push({ g: 'Speed', k: 'Compute time', f: `(${(linFlopsTok / 1e9).toFixed(1)} GFLOP matmul${lowP.x > 1 ? ` ÷ ${lowP.x} (${lowP.label})` : ''} + ${((attnFlopsDec(avgCtx) + idxFlopsDec(avgCtx)) / 1e9).toFixed(2)} GFLOP attention${K.sparse ? ' + indexer' : ''}) × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} ÷ (${tfl.v.toFixed(1)} TFLOPS × 0.5)  — ${tfl.note}`, v: ms(tComp) });
     T.push({ g: 'Speed', k: 'Fixed overhead', f: `${R.stepMs} ms/step + ${G.L} layers × ${layerUsEff.toFixed(0)} µs${tComm ? ` + interconnect ${ms(tComm)}` : ''}${ppM > 1 ? ` (${ppM} pipelined stages)` : ''}`, v: ms(tFixed + tComm) });
 
     // ---- prefill / TTFT (prompt is prefilled once per request even when batch n > 1) ----
@@ -554,19 +682,27 @@
     const ggufPath = q.gguf && (rtKey === 'llamacpp' || rtKey === 'ollama');
     const consumerNv = g.vendor === 'nvidia' && (isGeForceFp16Acc(g) || /^4090/.test(g.key));
     const int8x = g.int8_tensor === false ? 1 : (consumerNv ? 2 : 1);
-    const pfTfl = ggufPath && !isApple(g) ? tfl.v * int8x : tfl.v * fp8x;
-    const pfEff = isApple(g) ? 0.68 : (ggufPath && g.category === 'datacenter' ? 0.18 : R.pfEff);
+    // Matmul speed-up in prefill: INT8 MMQ (llama.cpp on GeForce) or FP8/FP4 tensor cores; attention stays BF16.
+    const pfLinX = ggufPath && !isApple(g) ? int8x : fp8x;
+    const pfTfl = tfl.v * pfLinX;
+    // llama.cpp MMQ prefill on datacenter GPUs is limited by integer dequant, not tensor TFLOPS: achieved ≈ 3.86 · TFLOPS^0.514
+    // (scoreboard pp512: H100 9918 vs A100 4850 tok/s = 2.04× for 3.17× the TFLOPS).
+    const pfEff = isApple(g) ? 0.68 : (ggufPath && g.category === 'datacenter' ? Math.min(R.pfEff, 3.86 * Math.pow(tfl.v * pfLinX, -0.486)) : R.pfEff);
+    // Prefill attention runs un-absorbed (MLA: 4 × mean(qk 192, v 128) = 4 × 160 per head per pair).
+    const hfFullPf = 4 * (K.mla ? G.hd : (m.global_head_dim || G.hd));
+    const swaPairsOf = (t) => K.window && t > K.window ? K.window * (t - K.window / 2) : t * t / 2;
+    const idxPairsOf = (t) => (K.sparse && K.groups ? K.fullAttn * (K.groups.reduce((a, x) => a + x.n * (x.r < 64 ? t * t / (2 * x.r) : 0), 0) / K.groups.reduce((a, x) => a + x.n, 0)) / (K.idxFreq || 1) : 0);
+    const pfAttnFlops = (t) => G.heads * (K.fullAttn * attendedPairs(K, t) * hfFullPf + K.swaAttn * swaPairsOf(t) * 4 * G.hd);
+    const pfIdxFlops = (t) => idxPairsOf(t) * 2 * K.idxHeads * K.idxDim;
     const prefillTimeFor = (toks, pipelined) => {
       if (toks <= 0) return 0;
-      const swaP = K.window && toks > K.window ? K.window * (toks - K.window / 2) : toks * toks / 2;
-      const attnP = 4 * (K.fullAttn * toks * toks / 2 + K.swaAttn * swaP) * G.heads * G.hd;
-      const flopsP = 2 * (G.moe ? G.A : G.P) * toks + attnP;
-      const pfCompAll = flopsP / (pfTfl * 1e12 * pfEff * Lyt.tp * tpCompEff);
+      const effFlopsP = 2 * G.Amm * toks / pfLinX + pfAttnFlops(toks) + pfIdxFlops(toks) / idxX;
+      const pfCompAll = effFlopsP / (tfl.v * 1e12 * pfEff * Lyt.tp * tpCompEff);
       const cTok = Math.min(R.chunk, toks);
       const nChunks = Math.ceil(toks / cTok);
       const pfW = Math.max(0, wB - ub);
       const pfMemAll = nChunks * (pfW * (1 - offFrac)) / Lyt.tp / (bw * bwEff);
-      const pfOffAll = offFrac > 0 ? nChunks * pfW * offFrac / (offBw * 1e9) : 0;
+      const pfOffAll = offFrac > 0 ? nChunks * pfW * offFrac / (offBw * 1e9 * (cpuRun ? 1 : Lyt.tp)) : 0;
       const pfCommAll = nChunks * (tpCommStageFor(cTok, G.L) + (Lyt.pp > 1 ? (Lyt.pp - 1) * ppHopFor(cTok) : 0));
       const pfFixedAll = nChunks * (G.L * R.layerUs * 1e-6) + pfCommAll;
       const seqTime = Math.max(pfCompAll, pfMemAll) + pfOffAll + pfFixedAll;
@@ -576,9 +712,7 @@
       if (pipelined) return seqTime / (Lyt.pp * 0.92);
       return seqTime * (nChunks + Lyt.pp - 1) / (nChunks * Lyt.pp);
     };
-    const swaPairs = K.window && pfTok > K.window ? K.window * (pfTok - K.window / 2) : pfTok * pfTok / 2;
-    const attnPf = 4 * (K.fullAttn * pfTok * pfTok / 2 + K.swaAttn * swaPairs) * G.heads * G.hd;
-    const pfFlops = 2 * (G.moe ? G.A : G.P) * pfTok + attnPf;
+    const pfFlops = 2 * G.Amm * pfTok + pfAttnFlops(pfTok) + pfIdxFlops(pfTok);
     const pfChunkTok = Math.min(R.chunk, pfTok);
     const chunks = Math.ceil(pfTok / pfChunkTok);
     const tPrefill = prefillTimeFor(pfTok, false);
@@ -596,8 +730,9 @@
     if (inp.spec) {
       const a = clamp(inp.specAccept, 0.01, 0.999), k = inp.specTokens;
       const E = (1 - Math.pow(a, k + 1)) / (1 - a);
-      const draftKvRead = kvReadGpu * (draftP / G.P);
-      const tDraft = (draftB / (Lyt.tp * Lyt.pp) + draftKvRead / Lyt.pp) / (bw * bwEff) * Lyt.pp / ppEff + R.stepMs / 2000 + 0.0002;
+      const draftKvRead = kvReadGpu * draftKvRatio;
+      // Draft step: its weights + KV over the same bandwidth, plus its own per-layer launch cost (≈ L·(P_d/P)^⅓ layers).
+      const tDraft = (draftB / (Lyt.tp * Lyt.pp) + draftKvRead / Lyt.pp) / (bw * bwEff) * Lyt.pp / ppEff + R.stepMs / 2000 + draftLayers * R.layerUs * 1e-6;
       // Verifying k+1 tokens activates more MoE experts per step and sends (k+1)× larger TP messages.
       const vTok = sMicro * (k + 1);
       const vTouch = G.moe ? 1 - Math.pow(1 - G.f, vTok) : 1;
@@ -605,7 +740,7 @@
       const vWRead = G.moe ? sharedB + vRoutedB : wRead;
       const vWReadEff = G.moe ? sharedB + vRoutedB / moeEffFor(vTok) : wRead;
       const vTMemStage = (vWReadEff * (1 - offFrac) / (Lyt.tp * Lyt.pp) + kvReadGpu / Lyt.pp) / (bw * bwEff);
-      const vTOff = (offFrac > 0 ? vWRead * offFrac / (offBw * 1e9) : 0) + (offKvFlag ? kvRead / (PCIE_HOST_BW * 1e9) : 0);
+      const vTOff = (offFrac > 0 ? vWRead * offFrac / (offBw * 1e9 * (cpuRun ? 1 : Lyt.tp)) : 0) + (offKvFlag ? kvRead / (PCIE_HOST_BW * 1e9) : 0);
       const vTCommStage = tpCommStageFor(vTok, G.L / Lyt.pp) + (Lyt.pp > 1 ? ((Lyt.pp - 1) / Lyt.pp) * ppHopFor(vTok) : 0);
       const tVerify = (Math.max(vTMemStage, tCompStage * (k + 1)) + tFixedStage + vTCommStage + vTOff / Lyt.pp) * Lyt.pp / ppEff + tPrefillAmort;
       const tCycle = (inp.specType === 'parallel' ? tDraft : k * tDraft) + tVerify;
@@ -616,7 +751,7 @@
     const throughput = perSeqTps * S;
 
     const ttft = tPrefill + tStepDecode;
-    T.push({ g: 'Speed', k: 'Prefill FLOPs', f: `2 × ${fmtP(G.moe ? G.A : G.P)} ${G.moe ? 'active ' : ''}params × ${pfTok.toLocaleString()} prompt tokens + causal attention`, v: `${(pfFlops / 1e12).toFixed(2)} TFLOP` });
+    T.push({ g: 'Speed', k: 'Prefill FLOPs', f: `2 × ${fmtP(G.Amm)} ${G.moe ? 'active ' : ''}matmul params (input lookup excluded) × ${pfTok.toLocaleString()} prompt tokens + causal attention${K.sparse ? ' (top-' + K.topk + ' sparse) + indexer' : ''}`, v: `${(pfFlops / 1e12).toFixed(2)} TFLOP` });
     T.push({ g: 'Speed', k: 'Time to first token', f: `max(FLOPs ÷ (${pfTfl.toFixed(1)} TFLOPS${ggufPath && !isApple(g) ? (int8x > 1 ? ' (INT8 MMQ)' : ' (MMQ, no INT8 boost)') : fp8x > 1 ? ` (${lowP.label})` : ''} × ${pfEff}${Lyt.tp > 1 ? ` × ${Lyt.tp}` : ''}), ${chunks} chunk weight reads)${offFrac > 0 ? ' + offload streaming' : ''} + first decode step`, v: ms(ttft) });
     const ttftQueued = uRep > 1 ? prefillTimeFor(pfTok, true) * uRep + tStepDecode : ttft;
 
@@ -629,6 +764,9 @@
     if (seq > (m.context_length || Infinity)) W.push(`Sequence length exceeds the model's ${m.context_length.toLocaleString()}-token context window.`);
     if (q.gguf && !['llamacpp', 'ollama'].includes(rtKey)) W.push(`${q.label} is a GGUF format — normally served by llama.cpp or Ollama.`);
     if (rtKey === 'mlx' && !isApple(g)) W.push('MLX only runs on Apple Silicon.');
+    if ((KV_SUPPORT[rtKey] || []).length && !KV_SUPPORT[rtKey].includes(inp.kvQuant)) W.push(`${R.label} has no ${KV_LABELS[inp.kvQuant] || inp.kvQuant} KV cache; it supports ${KV_SUPPORT[rtKey].map((k) => KV_LABELS[k].split(' (')[0]).join(', ')}.`);
+    if (inp.kvQuant === 'nvfp4' && rtKey === 'trtllm' && !isBlackwell(g)) W.push('TensorRT-LLM NVFP4 KV cache needs a Blackwell GPU.');
+    if ((WEIGHT_UNSUPPORTED[rtKey] || []).includes(inp.quant)) W.push(`${R.label} cannot load ${q.label} checkpoints${rtKey === 'llamacpp' || rtKey === 'ollama' ? ' — it loads GGUF files (Q8_0 ≈ INT8, Q4_K_M ≈ INT4)' : rtKey === 'mlx' ? ' — use MLX 4-bit / 8-bit' : ''}.`);
     if (q.fp8 && !supportsFp8(g)) W.push(`${g.label} has no FP8 tensor cores: FP8 weights save memory but compute runs at FP16 speed (weight-only).`);
     if (inp.quant === 'nvfp4' && !isBlackwell(g)) W.push('NVFP4 is accelerated only on Blackwell; elsewhere it is dequantized to FP16 on the fly.');
     if (inp.quant === 'mxfp4' && !supportsMxfp4(g)) W.push('MXFP4 is accelerated only on Blackwell and AMD MI350X/MI355X; elsewhere it is dequantized on the fly.');
@@ -641,7 +779,7 @@
     return {
       mode: 'inference', runtime: rtKey, runtimeLabel: R.label, layout: Lyt, status,
       memory: {
-        perGpu: perGpu / GiB, total: totalUse / GiB, capPerGpu: usable.v, capTotal: usable.v * Lyt.n, rawPerGpu: g.memory, pct,
+        perGpu: perGpu / GiB, total: totalUse / GiB, capPerGpu: cap / GiB, capTotal: cap / GiB * Lyt.n, rawPerGpu: g.memory, pct,
         segments: segsGpu.map(([key, label, b]) => ({ key, label, gib: b / GiB })),
         offloaded: offW + offKv > 0 ? [['Weights', offW], ['KV cache', offKv]].filter((x) => x[1] > 0).map(([label, b]) => ({ label, gib: b / GiB })) : [],
         offloadTarget: inp.offloadTarget,
@@ -677,8 +815,9 @@
     // ---- base / trainable weights ----
     let wBpp, trainable, wLabel;
     if (method === 'full') {
-      wBpp = { fp32: 4, fp16: 2, fp8: 1 }[inp.ftQuant] ?? 2;
-      trainable = P; wLabel = `${fmtP(P)} × ${wBpp} B (${inp.ftQuant.toUpperCase()})`;
+      // FP8 training (Transformer Engine / Megatron) keeps BF16 parameters plus an FP8 weight cache (3 B), not FP8-only weights.
+      wBpp = { fp32: 4, fp16: 2, fp8: 3 }[inp.ftQuant] ?? 2;
+      trainable = P; wLabel = `${fmtP(P)} × ${wBpp} B (${inp.ftQuant === 'fp8' ? 'BF16 params + FP8 weight cache' : inp.ftQuant.toUpperCase()})`;
     } else {
       wBpp = method === 'qlora' ? 4.127 / 8 : 2; // NF4 + double-quantised constants ≈ 4.127 bits
       // LoRA on all linear layers: r × (d_in + d_out) per projection
@@ -702,8 +841,8 @@
 
     // ---- gradients, optimizer, master weights ----
     const pureBf16 = !!o.use_bf16_true && (method !== 'full' || inp.ftQuant !== 'fp32');
-    const gradB = method === 'full' ? Math.max(2, wBpp === 1 ? 2 : wBpp) : 4;        // LoRA adapters train in fp32
-    const masterB = method === 'full' ? (wBpp < 4 && !pureBf16 ? 4 : 0) : 0;       // fp32 master copy in mixed precision
+    const gradB = method === 'full' ? (inp.ftQuant === 'fp32' ? 4 : 2) : 4;         // BF16 grads (FP32 for FP32 training); LoRA adapters train in fp32
+    const masterB = method === 'full' ? (inp.ftQuant !== 'fp32' && !pureBf16 ? 4 : 0) : 0; // fp32 master copy in mixed precision
     let optB = OPT_BYTES[o.optimizer_type] ?? 8;
     if (o.optimizer_type === 'adafactor') optB = 8 / G.h;                            // factored second moments ≈ 4·(m+n)/(m·n) ≈ 8/h
     if (o.use_8bit_optimizer && optB > 0) optB = optB / 4;                          // 8-bit states (bitsandbytes)
@@ -743,10 +882,13 @@
     let act = actFull + actCk;
     // Fused / chunked cross-entropy (Liger / Unsloth) avoids materializing the full [tokens × vocab] fp32 logits tensor.
     const logitsTok = o.fused_cross_entropy ? Math.min(tokens, 256) : tokens;
-    const logits = logitsTok * (G.V || 32000) * 4 * 2;                               // fp32 logits + their gradient
+    // HF loss path: bf16 logits (2 B) + fp32 upcast (4 B) + fp32 gradient (4 B) = 10 B per element; fused/chunked CE
+    // (Liger, Unsloth, cut-cross-entropy) keeps only a small chunk of fp32 logits + gradient alive.
+    const logitsBpe = o.fused_cross_entropy ? 8 : 10;
+    const logits = logitsTok * (G.V || 32000) * logitsBpe;
     if (o.activation_offloading) act = act * 0.15;
     T.push({ g: 'Memory', k: 'Activations', f: `${tokens.toLocaleString()} tokens × (7h + 2·kv + 4·ffn) × 2 B × ${fullLayers.toFixed(0)} layers${ck ? ` + checkpoints h × 2 B × ${Math.round(G.L * ck)} layers` : ''}${o.activation_offloading ? ' × 0.15 (offloaded)' : ''}`, v: gib(act) });
-    T.push({ g: 'Memory', k: 'Logits', f: `${logitsTok.toLocaleString()}${o.fused_cross_entropy ? ' (chunked fused CE)' : ''} × vocab ${(G.V || 32000).toLocaleString()} × 4 B × 2 (value + grad)`, v: gib(logits) });
+    T.push({ g: 'Memory', k: 'Logits', f: `${logitsTok.toLocaleString()}${o.fused_cross_entropy ? ' (chunked fused CE)' : ''} × vocab ${(G.V || 32000).toLocaleString()} × ${logitsBpe} B (${o.fused_cross_entropy ? 'fp32 chunk + grad' : 'bf16 logits + fp32 upcast + fp32 grad'})`, v: gib(logits) });
 
     const ctx = (isApple(g) ? 0.3 : 0.6) * GiB, frag = 0.06 * (act + logits);
     // ZeRO-3 gathers full unsharded layers (~2 layers prefetch buffer), independent of N.
@@ -773,10 +915,12 @@
     // (full layers attend T/2 on average; sliding-window layers W·(1 − W/(2T)); linear-attention layers are O(1)).
     const swaAvg = KL.window && effSeqLen > KL.window ? KL.window * (1 - KL.window / (2 * effSeqLen)) : effSeqLen / 2;
     const attended = KL.fullAttn * effSeqLen / 2 + KL.swaAttn * swaAvg;
-    const flopsFwd = 2 * G.A + 4 * attended * G.heads * G.hd;
+    const linF = 2 * G.Amm, attnF = 4 * attended * G.heads * G.hd;
+    const flopsFwd = linF + attnF;
     const mult = method === 'full' ? 3 : 2;                                          // fwd + bwd (LoRA skips weight grads)
     const recompute = ck * 1;                                                        // one extra forward for checkpointed layers
-    const flopsTok = flopsFwd * (mult + recompute);
+    // Attention scores have no frozen weights: their backward is always 2× forward, so they cost 3× even under LoRA.
+    const flopsTok = linF * (mult + recompute) + attnF * (3 + recompute);
     const fp8Train = method === 'full' && inp.ftQuant === 'fp8';
     const fp8TrainX = fp8Train && supportsFp8(g) ? 2 : 1;
     let mfu = g.category === 'datacenter' ? 0.42 : isApple(g) ? 0.30 : 0.38;
@@ -792,20 +936,28 @@
     if (N > 1) {
       const link = LINKS[inp.cluster ? inp.interNode : inp.interconnect] || LINKS.pcie4;
       const bwBps = link.bw * 1e9;
+      const gatherB = method === 'full' ? Math.min(wBpp, 2) : 4;                    // BF16 params (FP8 cache rebuilt locally); fp32 adapters
+      const rs = (N - 1) / N;                                                         // ring reduce-scatter / all-gather volume per element
       if (zero === 0) {
-        commS = 0.3 * 2 * (N - 1) / N * trainable * gradB / bwBps;
-      } else if (zero <= 2) {
-        // ZeRO-1/2: 1 gradient reduce-scatter + 1 updated-param all-gather per step
-        commS = 0.3 * (N - 1) / N * trainable * (gradB + wBpp) / bwBps;
+        // DDP: gradients all-reduced once per optimizer step (accumulation is local)
+        commS = 0.3 * 2 * rs * trainable * gradB / bwBps;
+      } else if (zero === 1) {
+        // ZeRO-1: one gradient reduce-scatter at the accumulation boundary + one updated-param all-gather
+        commS = 0.3 * rs * trainable * (gradB + gatherB) / bwBps;
+      } else if (zero === 2) {
+        // ZeRO-2: gradients are partitioned during backward, so they are reduce-scattered on every micro-batch
+        commS = 0.3 * rs * trainable * (inp.gradSteps * gradB + gatherB) / bwBps;
       } else {
-        // ZeRO-3: gradient reduce-scatter + (2 + ck) param all-gathers per micro-batch (fwd, bwd, recompute)
-        commS = 0.3 * (N - 1) / N * (trainable * gradB + inp.gradSteps * (2 + ck) * P * wBpp) / bwBps;
+        // ZeRO-3: per micro-batch, gradient reduce-scatter + (2 + ck) param all-gathers (forward, backward, recompute)
+        commS = 0.3 * rs * inp.gradSteps * (trainable * gradB + (2 + ck) * P * gatherB) / bwBps;
       }
       tps = tokensPerStep / (tokensPerStep / tps + commS);
     }
     const offloadPenalty = (offOpt ? 0.85 : 1) * (offGrad ? 0.90 : 1) * (offParam ? 0.6 : 1) * (o.activation_offloading ? 0.9 : 1);
     tps *= offloadPenalty;
-    T.push({ g: 'Speed', k: 'FLOPs / token', f: `(2 × ${fmtP(G.A)} + attention 4 × ${KL.full + KL.swa} layers × avg attended × d) × ${mult}${recompute ? ` + ${ck.toFixed(2)} recompute` : ''}`, v: `${(flopsTok / 1e9).toFixed(1)} GFLOP` });
+    T.push({ g: 'Speed', k: 'FLOPs / token', f: mult === 3
+      ? `(2 × ${fmtP(G.Amm)} + attention 4 × ${KL.full + KL.swa} layers × avg attended × d) × 3${recompute ? ` + ${ck.toFixed(2)} recompute` : ''}`
+      : `2 × ${fmtP(G.Amm)} × 2 (no frozen-weight grads) + attention 4 × ${KL.full + KL.swa} layers × avg attended × d × 3${recompute ? `, each + ${ck.toFixed(2)} recompute` : ''}`, v: `${(flopsTok / 1e9).toFixed(1)} GFLOP` });
     T.push({ g: 'Speed', k: 'Training throughput', f: `MFU ${mfu.toFixed(2)} × ${tfl.v.toFixed(1)} TFLOPS${fp8TrainX > 1 ? ' × 2 (FP8)' : ''} × ${N} GPU ÷ FLOPs/token${commS ? ` − ${zero >= 3 ? 'ZeRO-3 gathers + ' : ''}gradient all-reduce` : ''}${offloadPenalty < 1 ? ` × ${offloadPenalty.toFixed(2)} offload` : ''}`, v: `${Math.round(tps).toLocaleString()} tok/s` });
 
     const effTokPerSample = o.sequence_packing ? inp.tokensPerSample : Math.min(seqLen, inp.tokensPerSample);
@@ -834,6 +986,9 @@
   /* ================================================================== *
    * DIFFUSION (image / video) — inference
    * ================================================================== */
+  // Achieved fraction of dense BF16 TFLOPS for eager diffusers DiTs: ≈0.72–0.75 on Ada (L20 / RTX 4090 FLUX), ≈0.31–0.35 on H100
+  // (FLUX 28 steps 6.75 s; Wan2.1 720p×81: 14B 1875 s, 1.3B 410 s). p = 1 keeps achieved TFLOPS rising with peak TFLOPS.
+  const DIFF_EFF = { a: 0.98, t0: 510, p: 1 };
   function diffusion(inp, m, g) {
     const T = [], W = [];
     const q = QUANTS[inp.quant] || QUANTS.fp16;
@@ -857,40 +1012,62 @@
     const encGpu = inp.encoderOffload ? 0 : encB;
     T.push({ g: 'Memory', k: 'Denoiser weights', f: `${fmtP(P)} × ${q.bpw} bits ÷ 8`, v: gib(wB) });
     T.push({ g: 'Memory', k: 'Text encoders', f: `${fmtP(aux)} × 2 B${inp.encoderOffload ? ' — offloaded to CPU after encoding' : ''}`, v: gib(encB) });
-    const actB = b * cfg * tokens * h * 2 * 12;
-    T.push({ g: 'Memory', k: 'Latent activations', f: `batch ${b} × CFG ${cfg} × ${Math.round(tokens).toLocaleString()} latent tokens (${spatialDs}× spatial) × h ${h} × 2 B × 12 live tensors`, v: gib(actB) });
+    // Classifier-free guidance: the SD3 / SDXL pipelines batch the conditional and unconditional passes (2× activations);
+    // the Wan and Qwen-Image pipelines run them one after the other (same FLOPs, 1× activations).
+    const cfgSequential = /wan|qwen-image/.test(m.slug);
+    const cfgAct = cfgSequential ? 1 : cfg;
+    const textTok = m.text_tokens || 0;                                             // MMDiT text tokens join the image tokens in attention
+    const Ntok = tokens + textTok;
+    const actB = b * cfgAct * Ntok * h * 2 * 12;
+    T.push({ g: 'Memory', k: 'Latent activations', f: `batch ${b} × CFG ${cfgAct}${cfgSequential && cfg > 1 ? ' (passes run sequentially)' : ''} × ${Math.round(Ntok).toLocaleString()} tokens (${Math.round(tokens).toLocaleString()} latent at ${spatialDs}× spatial${textTok ? ` + ${textTok} text` : ''}) × h ${h} × 2 B × 12 live tensors`, v: gib(actB) });
     // Causal 3D video VAEs decode 1 temporal chunk (4 frames) at a time.
     const vaeFrames = video ? Math.min(frames, 4) : 1;
     const px = inp.imageWidth * inp.imageHeight * vaeFrames;
     const vaeB = (inp.vaeTiling ? Math.min(px, 512 * 512) : px) * 2560;
-    T.push({ g: 'Memory', k: 'VAE decode workspace', f: `${inp.vaeTiling ? 'tile 512×512' : `${inp.imageWidth}×${inp.imageHeight}${video ? ` × ${vaeFrames} frames` : ''}`} px × 2.5 KiB (runs sequentially after denoiser)`, v: gib(vaeB) });
+    const vaeW = (video ? 0.5 : 0.2) * GiB;                                        // VAE weights (FLUX VAE 84M, Wan VAE 127M params)
+    T.push({ g: 'Memory', k: 'VAE decode workspace', f: `${inp.vaeTiling ? 'tile 512×512' : `${inp.imageWidth}×${inp.imageHeight}${video ? ` × ${vaeFrames} frames` : ''}`} px × 2.5 KiB (runs after the denoiser)`, v: gib(vaeB) });
     const ctx = (isApple(g) ? 0.3 : 0.6) * GiB;
     const shard = inp.cluster ? Math.min(Lyt.tp, Lyt.n) : Math.max(1, Lyt.n);
     const actGpu = actB / Math.max(1, Lyt.n);
-    // Denoiser latents are freed before VAE decode runs, so peak VRAM uses max(latents, VAE).
-    const peakWork = Math.max(actGpu, vaeB);
-    const peakSeg = vaeB > actGpu ? ['vae', 'Peak workspace (VAE decode)', vaeB] : ['act', 'Peak workspace (latent activations)', actGpu];
-    const segs = [['weights', 'Denoiser weights', wB / shard], ...(encGpu ? [['enc', 'Text encoders', encGpu / shard]] : []), peakSeg, ['ctx', 'Runtime context', ctx], ['frag', 'Allocator fragmentation', 0.05 * peakWork]];
+    // Peak = max over the two phases. With model CPU offload (diffusers enable_model_cpu_offload) only the running model is
+    // on the GPU, so the denoiser is gone before the VAE decodes; without it everything stays resident.
+    const offloadModels = Boolean(inp.encoderOffload);
+    const phaseDenoise = wB / shard + encGpu / shard + actGpu + (offloadModels ? 0 : vaeW);
+    const phaseVae = (offloadModels ? 0 : wB / shard + encGpu / shard) + vaeB + vaeW;
+    const vaePeak = phaseVae > phaseDenoise;
+    const segs = vaePeak
+      ? [...(offloadModels ? [] : [['weights', 'Denoiser weights', wB / shard], ...(encGpu ? [['enc', 'Text encoders', encGpu / shard]] : [])]), ['vae', 'Peak workspace (VAE decode + VAE weights)', vaeB + vaeW]]
+      : [['weights', 'Denoiser weights', wB / shard], ...(encGpu ? [['enc', 'Text encoders', encGpu / shard]] : []), ['act', `Peak workspace (latent activations${offloadModels ? '' : ' + VAE weights'})`, actGpu + (offloadModels ? 0 : vaeW)]];
+    const peakWork = vaePeak ? vaeB : actGpu;
+    segs.push(['ctx', 'Runtime context', ctx], ['frag', 'Allocator fragmentation', 0.05 * peakWork]);
     const perGpu = segs.reduce((a, s) => a + s[2], 0);
     const pct = perGpu / (usable.v * GiB) * 100;
+    T.push({ g: 'Memory', k: 'Peak phase', f: `${offloadModels ? 'model CPU offload: only the running model is resident — ' : ''}denoise ${gib(phaseDenoise)} vs VAE decode ${gib(phaseVae)}`, v: vaePeak ? 'VAE decode' : 'denoising' });
 
-    // MMDiT models split weights between image and text streams; only the image stream runs on every image token.
+    // FLOPs per step: only the params that act on every token (adaLN modulation, text-stream weights excluded) × all tokens
+    // in the joint attention (image latents + text for MMDiT), plus attention 4·L·N²·h.
     const imgRatio = m.image_param_ratio ?? 1;
-    const linearFlops = 2 * A * imgRatio * tokens * cfg * b;
-    const attnFlops = 4 * L * tokens * tokens * h * cfg * b;
+    const linearFlops = 2 * A * imgRatio * Ntok * cfg * b;
+    const attnFlops = 4 * L * Ntok * Ntok * h * cfg * b;
     const flopsStep = linearFlops + attnFlops;
-    const lowP = lowPrecisionX(q, g);
-    const attnLowP = q.fp8 && supportsFp8(g) ? 1.5 : 1;
-    // Smooth, strictly monotonic efficiency curve calibrated to FLUX/SD3.5/Wan timings (higher TFLOPS is never slower).
-    const eff = (0.66 / (1 + Math.pow(tfl.v / 1800, 0.75))) * (/tensorrt/.test(inp.runtime) ? 1.35 : 1);
+    // Low-precision speed-up measured end to end (NVIDIA TensorRT FLUX on RTX 5090: FP16 10.93 s → FP8 6.68 s (1.64×) →
+    // FP4 3.85 s (2.84×)); spec-sheet tensor ratios (2×, 8×) overstate it because attention, norms and the VAE stay 16-bit.
+    const dLow = (q.fp8 && supportsFp8(g)) ? { x: 1.64, label: 'FP8' } : ((inp.quant === 'nvfp4' && isBlackwell(g)) || (inp.quant === 'mxfp4' && supportsMxfp4(g))) ? { x: 2.84, label: 'FP4' } : { x: 1, label: '' };
+    // UNet denoisers (SDXL) run many small conv / attention kernels: ≈0.55× the DiT efficiency (SDXL A100 30 steps ≈ 3.3 s).
+    const eff = (DIFF_EFF.a / (1 + Math.pow(tfl.v / DIFF_EFF.t0, DIFF_EFF.p))) * (isUnet ? 0.55 : 1) * (/tensorrt/.test(inp.runtime) ? 1.35 : 1);
     const gpuScale = Math.max(1, Lyt.n === 1 ? 1 : Lyt.n * 0.85);
-    const tStep = (linearFlops / lowP.x + attnFlops / attnLowP) / (tfl.v * 1e12 * eff * gpuScale);
-    const tVae = (inp.imageWidth * inp.imageHeight * frames) * 2.6e6 * b / (tfl.v * 1e12 * 0.3);
-    const tEnc = inp.encoderOffload ? 0.8 : 0.05;
+    const tStep = (linearFlops + attnFlops) / dLow.x / (tfl.v * 1e12 * eff * gpuScale);
+    // VAE decode: analytic conv FLOPs per output pixel — 2D decoder (FLUX/SD) ≈ 9.3 MFLOP; causal 3D video decoder ≈ 19 MFLOP
+    // per pixel-frame (3×3×3 kernels, narrower channels). Calibrated: Wan 720p × 81 frames ≈ 5–7 s.
+    const vaeFlopsPx = video ? 1.9e7 : 9.3e6;
+    const tVae = (inp.imageWidth * inp.imageHeight * frames) * vaeFlopsPx * b / (tfl.v * 1e12 * 0.25);
+    // Text encoding: one forward of the encoder(s) over the prompt, plus moving them to the GPU when model offload is on.
+    const encTok = Math.max(77, textTok || 512);
+    const tEnc = (offloadModels ? encB / (PCIE_HOST_BW * 1e9) : 0) + 2 * aux * encTok / (tfl.v * 1e12 * 0.3) + 0.02;
     const total = inp.inferenceSteps * tStep + tVae + tEnc;
-    T.push({ g: 'Speed', k: 'FLOPs per step', f: `(2 × params${imgRatio < 1 ? ` × ${imgRatio} img-stream` : ''} × tokens + 4·L·tokens²·h) × CFG ${cfg} × batch ${b}`, v: `${(flopsStep / 1e12).toFixed(1)} TFLOP` });
-    T.push({ g: 'Speed', k: 'Step time', f: `FLOPs ÷ (${tfl.v.toFixed(1)} TFLOPS${lowP.x > 1 ? ` × ${lowP.x} ${lowP.label}` : ''} × ${eff.toFixed(2)} achieved)`, v: ms(tStep) });
-    T.push({ g: 'Speed', k: 'Generation time', f: `${inp.inferenceSteps} steps × step + VAE decode ${ms(tVae)} + text encode ${ms(tEnc)}`, v: `${total.toFixed(1)} s` });
+    T.push({ g: 'Speed', k: 'FLOPs per step', f: `(2 × ${fmtP(A)}${imgRatio < 1 ? ` × ${imgRatio} per-token` : ''} × ${Math.round(Ntok).toLocaleString()} tokens + 4·${L}·tokens²·${h}) × CFG ${cfg} × batch ${b}`, v: `${(flopsStep / 1e12).toFixed(1)} TFLOP` });
+    T.push({ g: 'Speed', k: 'Step time', f: `FLOPs ÷ (${tfl.v.toFixed(1)} TFLOPS${dLow.x > 1 ? ` × ${dLow.x} measured ${dLow.label} speed-up` : ''} × ${eff.toFixed(2)} achieved)`, v: ms(tStep) });
+    T.push({ g: 'Speed', k: 'Generation time', f: `${inp.inferenceSteps} steps × step + VAE decode ${ms(tVae)} (${(vaeFlopsPx / 1e6).toFixed(1)} MFLOP/px) + text encode ${ms(tEnc)}${offloadModels ? ' incl. moving encoders to the GPU' : ''}`, v: `${total.toFixed(1)} s` });
     const watts = g.tdp_watts * 0.85 * Lyt.n;
     if (q.fp8 && !supportsFp8(g)) W.push(`${g.label} has no FP8 tensor cores: FP8 saves memory but runs at FP16 speed.`);
     if (inp.quant === 'nvfp4' && !isBlackwell(g)) W.push('NVFP4 is accelerated only on Blackwell; elsewhere it is dequantized to FP16 on the fly.');
@@ -966,7 +1143,7 @@
   function ms(s) { return s >= 1 ? `${s.toFixed(2)} s` : `${(s * 1000).toFixed(2)} ms`; }
 
 
-  const api = { calculate, geometry, weightBytes, unreadBytes, kvLayout, kvBytesSeq, kvBytesGroup, kvBytesReplica, effTflops, deviceBw, usableGiB, autoRuntime, supportsFp8, supportsMxfp4, lowPrecisionX, QUANTS, KV_BYTES, KV_LABELS, RUNTIMES, LINKS, OFFLOAD, GiB };
+  const api = { calculate, geometry, weightBytes, unreadBytes, paramRates, attendedAt, attendedPairs, indexedAt, KV_SUPPORT, kvLayout, kvBytesSeq, kvBytesGroup, kvBytesReplica, effTflops, deviceBw, usableGiB, autoRuntime, supportsFp8, supportsMxfp4, lowPrecisionX, QUANTS, KV_BYTES, KV_LABELS, RUNTIMES, LINKS, OFFLOAD, GiB };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.GpuCalc = api;
 })(typeof window !== "undefined" ? window : globalThis);
