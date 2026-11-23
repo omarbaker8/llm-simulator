@@ -1,0 +1,47 @@
+table,Chip,Memory,pp512 t/s,tg128 t/s,Commit,Thanks to
+rocm_no_fa,Instinct MI300X,192 GB / HBM3 / 8192 bit,11476.40 ± 72.79,232.92 ± 0.53,ee3a9fc,@yeahdongcn
+rocm_no_fa,RX 7900 XTX,24 GB / GDDR6 / 384 bit,3552.27 ± 101.96,167.11 ± 0.50,2f0c2db,@Diablo-D3
+rocm_no_fa,Instinct MI210,64 GB / HBM2e / 4096 bit,2486.22 ± 9.58,124.51 ± 0.04,8160b38,@65a
+rocm_no_fa,Pro W7900,48 GB / GDDR6 / 384 bit,3213.17 ± 80.47,121.18 ± 0.06,8160b38,@65a
+rocm_no_fa,RX 7900 XT,20 GB / GDDR6 / 320 bit,3098.38 ± 24.02,116.15 ± 0.06,1e15bfd,@AdamNiederer
+rocm_no_fa,RX 9070,16 GB / GDDR6 / 256 bit,2381.77 ± 3.68,114.48 ± 0.60,d0660f2,@andj1210
+rocm_no_fa,Instinct MI100,32 GB / HBM2 / 4096 bit,2732.83 ± 1.98,110.48 ± 0.14,9c35706,@firefox42
+rocm_no_fa,RX 9070 XT,16 GB / GDDR6 / 256 bit,5055.19 ± 109.58,101.27 ± 0.27,583cb83,@Hadrianneue
+rocm_no_fa,RX 7800 XT,16 GB / GDDR6 / 256 bit,2151.81 + 17.94,100.94 + 0.10,00131d6,@olegshulyakov
+rocm_no_fa,Instinct MI50,32 GB / HBM2 / 4096 bit,1057.24 ± 0.53,98.95 ± 0.25,97d5117,@wtarreau
+rocm_no_fa,RX 7900 GRE,16 GB / GDDR6 / 256 bit,1456.98 ± 12.39,96.07 ± 0.10,6fa3b55,@MihaiBojescu
+rocm_no_fa,AI PRO R9700,32 GB / GDDR6 / 256 bit,4443.54 ± 339.25,93.84 ± 0.26,bd4ef13,@gogich77
+rocm_no_fa,Instinct MI60,32 GB / HBM2 / 4096 bit,1289.11 ± 0.62,91.46 ± 0.13,504af20,@Said-Akbar
+rocm_no_fa,RX 6900 XT,16 GB / GDDR6 / 256 bit,1889.84 ± 31.21,88.49 ± 0.00,a972fae,@notgood
+rocm_no_fa,Pro VII,16 GB / HBM2 / 4096 bit,1064.99 ± 1.18,87.45 ± 0.04,2739a71,@8XXD8
+rocm_no_fa,RX 6800 XT,16 GB / GDDR6 / 256 bit,1447.07 ± 1.36,83.92 ± 0.03,79c1160,@MrLavender
+rocm_no_fa,Pro V620,32 GB / GDDR6 / 256 bit,1803.65 ± 2.54,74.66 ± 0.01,5c0eb5e,@samteezy
+rocm_no_fa,RX 9060 XT,16 GB / GDDR6 / 256 bit,1419.67 ± 3.64,67.58 ± 0.24,a0e13dc,@lcy0321
+rocm_no_fa,RX 5700 XT,8 GB / GDDR6 / 256 bit,354.17 ± 0.18,67.55 ± 0.04,c05e8c9,@daniandtheweb
+rocm_no_fa,Instinct MI25,16 GB / HBM2 / 2048 bit,409.83 ± 0.23,63.94 ± 0.06,2739a71,@8XXD8
+rocm_no_fa,AI Max+ 395,128 GB / LPDDR5,911.36 ± 1.79,50.01 ± 0.07,e60f241,@firefox42
+rocm_no_fa,RX 7600 XT,16 GB / GDDR6 / 128 bit,1099.64 ± 2.05,48.58 ± 0.06,9c35706,@wbruna
+rocm_no_fa,RX Vega 64,8 GB / HBM2 / 2048 bit,240.68 ± 0.09,48.46 ± 0.09,ec428b0,@davispuh
+rocm_no_fa,Radeon 8060S,System Shared / DDR5,351.36 ± 0.67,47.97 ± 0.33,1d0125b,@hspak
+rocm_no_fa,Radeon 880M,System Shared / DDR5,163.25 ± 13.86,12.97 ± 1.63,c55d53a,@Hedede
+rocm_fa,Instinct MI300X,192 GB / HBM3 / 8192 bit,11945.97 ± 54.29,218.53 ± 0.09,ee3a9fc,@yeahdongcn
+rocm_fa,RX 7900 XTX,24 GB / GDDR6 / 384 bit,3874.25 ± 11.92,170.12 ± 0.56,2f0c2db,@Diablo-D3
+rocm_fa,Instinct MI210,64 GB / HBM2e / 4096 bit,2571.82 ± 2.89,130.18 ± 0.06,8160b38,@65a
+rocm_fa,Pro W7900,48 GB / GDDR6 / 384 bit,3472.86 ± 52.86,127.43 ± 0.12,8160b38,@65a
+rocm_fa,RX 9070,16 GB / GDDR6 / 256 bit,2452.68 ± 1.33,115.32 ± 0.52,d0660f2,@andj1210
+rocm_fa,RX 7900 XT,20 GB / GDDR6 / 320 bit,3261.75 ± 9.09,112.30 ± 0.06,1e15bfd,@AdamNiederer
+rocm_fa,Instinct MI100,32 GB / HBM2 / 4096 bit,2755.00 ± 3.68,104.71 ± 0.10,9c35706,@firefox42
+rocm_fa,Instinct MI50,32 GB / HBM2 / 4096 bit,1129.43 ± 0.15,105.82 ± 0.07,97d5117,@wtarreau
+rocm_fa,AI PRO R9700,32 GB / GDDR6 / 256 bit,4773.07 ± 49.30,97.98 ± 0.13,bd4ef13,@gogich77
+rocm_fa,RX 7900 GRE,16 GB / GDDR6 / 256 bit,1598.79 ± 11.48,97.53 ± 0.06,6fa3b55,@MihaiBojescu
+rocm_fa,RX 9070 XT,16 GB / GDDR6 / 256 bit,4903.51 ± 96.36,97.28 ± 0.13,583cb83,@Hadrianneue
+rocm_fa,RX 7800 XT,16 GB / GDDR6 / 256 bit,2304.63 + 2.85,95.99 + 0.21,00131d6,@olegshulyakov
+rocm_fa,RX 6900 XT,16 GB / GDDR6 / 256 bit,1948.31 ± 13.51,85.04 ± 0.02,a972fae,@notgood
+rocm_fa,Pro V620,32 GB / GDDR6 / 256 bit,1256.86 ± 0.55,70.83 ± 0.02,5c0eb5e,@samteezy
+rocm_fa,RX 9060 XT,16 GB / GDDR6 / 256 bit,1479.27 ± 0.71,65.42 ± 0.19,a0e13dc,@lcy0321
+rocm_fa,RX 5700 XT,8 GB / GDDR6 / 256 bit,314.17 ± 0.29,62.02 ± 0.05,c05e8c9,@daniandtheweb
+rocm_fa,AI Max+ 395,128 GB / LPDDR5,1003.53 ± 2.91,49.87 ± 0.02,e60f241,@firefox42
+rocm_fa,Radeon 8060S,System Shared / DDR5,366.08 ± 1.44,48.97 ± 0.15,1d0125b,@hspak
+rocm_fa,RX 7600 XT,16 GB / GDDR6 / 128 bit,1199.16 ± 1.07,47.65 ± 0.06,9c35706,@wbruna
+rocm_fa,RX Vega 64,8 GB / HBM2 / 2048 bit,153.17 ± 0.72,42.46 ± 0.40,ec428b0,@davispuh
+rocm_fa,Radeon 880M,System Shared / DDR5,213.31 ± 14.05,16.16 ± 1.41,c55d53a,@Hedede

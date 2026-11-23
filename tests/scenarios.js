@@ -132,7 +132,7 @@ section('C. Runtime budgets, offload, speculative decoding');
   exact('TensorRT-LLM budget = 80 − 0.1 × (80 − non-KV)', '80 − 0.1(80 − nonKV)', 80 - 0.1 * (80 - nonKv), t.memory.capPerGpu, 0.01);
   exact('Apple M4 Max 128 GB: 75% wired limit', '0.75 × 128', 96, run(INF, 'llama-3-1-8b', 'm4_max_128', { runtime: 'mlx', quant: 'int4' }).memory.capPerGpu, 0.01);
   exact('Apple M4 Pro 32 GB: 67% wired limit', '⅔ × 32', 32 * 2 / 3, run(INF, 'llama-3-1-8b', 'm4_pro_32', { runtime: 'mlx', quant: 'int4' }).memory.capPerGpu, 0.01);
-  exact('B200 usable 180 GiB (llama.cpp)', 'usable_memory', 180, run(INF, 'llama-3-1-8b', 'b200_192', { runtime: 'llamacpp', quant: 'q8_0' }).memory.capPerGpu, 0.01);
+  exact('B200 usable 178.4 GiB (llama.cpp; vLLM reports 178.35 GiB total)', 'usable_memory', 178.4, run(INF, 'llama-3-1-8b', 'b200_192', { runtime: 'llamacpp', quant: 'q8_0' }).memory.capPerGpu, 0.01);
   check('70B FP16 does not fit one H200 under vLLM 0.90 (131 GiB > 127 GiB)', run(INF, 'llama-3-1-70b', 'h200_141').memory.pct > 100);
   const off = run(INF, 'llama-3-1-70b', '4090_24', { quant: 'q4_k_m', runtime: 'llamacpp', offload: true, offloadFrac: 0.6 });
   exact('Offload 60%: GPU weights = 40% of GGUF', '0.4 × weights', 0.4 * off.memory.weightsGiB, seg(off, 'weights'), 0.01);
@@ -265,8 +265,11 @@ section('F. Published benchmarks');
   bench('llama.cpp Llama-2-7B Q4_0 A100 pp512', 'llama.cpp CUDA scoreboard #15013', 4850, sb('a100_80').perf.prefillTps, 30);
   bench('gpt-oss-20b MXFP4 RTX 4090 llama.cpp', 'llama.cpp discussion #15396', 222, run(INF, 'gpt-oss-20b', '4090_24', { quant: 'mxfp4', runtime: 'llamacpp', seq: 4096 }).perf.tps, 15);
   bench('gpt-oss-120b MXFP4 M2 Ultra llama.cpp', 'llama.cpp discussion #15396', 80, run(INF, 'gpt-oss-120b', 'm2_ultra_192', { quant: 'mxfp4', runtime: 'llamacpp', seq: 4096 }).perf.tps, 25);
-  { const t = run(INF, 'deepseek-r1-671b', 'h200_141', { quant: 'fp8', numGpus: 8, runtime: 'vllm', seq: 9216, outputTokens: 1024 }).perf.tps;
-    check('DeepSeek-V3/R1 FP8 8×H200 batch 1 within measured 47.7 (SGLang, Verda) – 63.1 (vLLM recipe, 15.85 ms TPOT)', t > 47.7 * 0.95 && t < 63.1 * 1.05, `${t.toFixed(1)} tok/s`); }
+  // InferenceX (2026) DeepSeek-R1-0528 FP8 TP8 on 8×H200, 1k/1k at concurrency 4. Early-2025 numbers (vLLM recipe 15.85 ms,
+  // SGLang/Verda 47.7 tok/s at batch 1) predate the current MLA/MoE kernels.
+  const dsH = (rt) => run(INF, 'deepseek-r1-671b', 'h200_141', { quant: 'fp8', kvQuant: 'fp8', numGpus: 8, runtime: rt, users: 4, seq: 2048, outputTokens: 1024 }).perf.msPerToken;
+  bench('DeepSeek-R1 FP8 8×H200 TP8 SGLang TPOT at c4 (ms)', 'InferenceX', 9.70, dsH('sglang'), 35);
+  bench('DeepSeek-R1 FP8 8×H200 TP8 TensorRT-LLM TPOT at c4 (ms)', 'InferenceX', 11.86, dsH('trtllm'), 15);
   bench('gpt-oss-120b 8×B200 TensorRT-LLM TP8/EP1 batch 1, 1k/2k', 'TensorRT-LLM tech blog 9', 420, run(INF, 'gpt-oss-120b', 'b200_192', { quant: 'mxfp4', numGpus: 8, runtime: 'trtllm', interconnect: 'nvlink_gen5', seq: 3072, outputTokens: 2048 }).perf.tps, 10);
   // Qwen speed benchmark (H20 96GB, SGLang 0.4.6, batch 1, input 1, 2048 out). Its dense rows sit ~2× under bandwidth
   // estimates (e.g. Qwen3-8B BF16 = 33% of H20 bandwidth), so these are loose checks of the MoE multi-GPU overhead.
@@ -417,7 +420,9 @@ section('K. Researched follow-ups (MiniMax-M3, Vera Rubin, Apple M5)');
   const tg = (gpu) => run(INF, 'qwen3-8b', gpu, { runtime: 'mlx', quant: 'int4', seq: 4224, outputTokens: 128 }).perf.tps;
   const g54 = tg('m5_16') / tg('m4_16');
   check('M5 vs M4 generation with MLX: ≈ bandwidth ratio 1.19–1.35× (Apple: +19–27%)', g54 > 1.15 && g54 < 1.35, `${g54.toFixed(2)}×`);
-  check('M5 Neural Accelerators only apply to MLX (llama.cpp keeps the shader rate)', run(INF, 'qwen3-8b', 'm5_max_128', { runtime: 'llamacpp', quant: 'q4_k_m', seq: 4224, outputTokens: 128 }).perf.prefillTps < run(INF, 'qwen3-8b', 'm5_max_128', { runtime: 'mlx', quant: 'int4', seq: 4224, outputTokens: 128 }).perf.prefillTps / 2);
+  { const pp = (gpu) => run(INF, 'qwen3-8b', gpu, { runtime: 'llamacpp', quant: 'q4_0', seq: 513, outputTokens: 1 }).perf.prefillTps;
+    const r = pp('m5_max_128') / pp('m4_max_128');
+    check('M5 Neural Accelerators also serve llama.cpp Metal: M5 Max ÷ M4 Max pp512 ≈ 3.6× (scoreboard #4167: 3,220 vs 886)', r > 3 && r < 4.3, `${r.toFixed(2)}×`); }
 }
 
 section('J. Dataset & hardware integrity');

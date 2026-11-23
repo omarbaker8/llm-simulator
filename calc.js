@@ -101,7 +101,8 @@
   function effTflops(g, rtKey) {
     // Apple M5 GPUs have per-core Neural Accelerators that MLX (macOS 26.2+) uses for matmuls: measured FP16 matmul on a 40-core
     // M5 Max is 55.6–65.6 TFLOPS (arXiv 2611.00486); Apple reports up to 4× M4 time-to-first-token with MLX.
-    if (rtKey === 'mlx' && g.matmul_tflops) return { v: g.matmul_tflops, note: 'M5 GPU Neural Accelerators (measured FP16 matmul, used by MLX)' };
+    // llama.cpp's Metal backend uses them too (scoreboard #4167: M5 Max pp512 3,220 vs M4 Max 886 tok/s).
+    if ((rtKey === 'mlx' || rtKey === 'llamacpp' || rtKey === 'ollama') && g.matmul_tflops) return { v: g.matmul_tflops, note: 'M5 GPU Neural Accelerators (measured FP16 matmul, used by MLX and llama.cpp Metal)' };
     // GeForce cards list FP16-accumulate tensor rates; FP32-accumulate (what bf16 kernels use) runs at half.
     if (isGeForceFp16Acc(g)) return { v: g.fp16_tflops / 2, note: 'GeForce RTX 30/40/50: FP32-accumulate rate = ½ the listed FP16-accumulate rate' };
     // Apple GPUs run FP16 at the same ALU rate as FP32; the list doubles it (skip for custom GPU where user enters effective rate).
@@ -156,7 +157,7 @@
       return { v: g.memory * f, note: `macOS GPU wired-memory limit ≈ ${f === 0.75 ? '75' : '67'}% of unified memory` };
     }
     if (g.usable_memory && g.usable_memory < g.memory) {
-      return { v: g.usable_memory, note: `usable HBM (${g.memory} GB raw, ${g.memory - g.usable_memory} GB reserved/ECC)` };
+      return { v: g.usable_memory, note: `usable HBM (${g.memory} GB raw, ${+(g.memory - g.usable_memory).toFixed(1)} GB reserved/ECC)` };
     }
     return { v: g.memory, note: g.type === 'apu' ? 'GPU-accessible share of system memory' : 'total device memory' };
   }
@@ -356,7 +357,8 @@
     // Indexer keys per entry: 128 FP8 values + one FP32 scale = 132 B (DeepSeek-V3.2); stored for every compressed entry.
     const idxRaw = m.indexer_dim != null ? m.indexer_dim : (sparse ? 132 : 0);
     // GLM-5.2/5.3 run the indexer every index_topk_freq-th layer and reuse its top-k elsewhere (keys + FLOPs ÷ freq).
-    const idxFreq = Math.max(1, m.index_topk_freq || 1);
+    // Mistral Large 4: only indexer_layer_count of the KV layers own an indexer; the rest reuse the nearest earlier top-k.
+    const idxFreq = Math.max(1, m.index_topk_freq || (m.indexer_layer_count ? full / m.indexer_layer_count : 1));
     const indexer = idxRaw * idxFrac / idxFreq;
     const topk = m.index_topk || 2048, idxHeads = m.index_n_heads || 64, idxDim = m.index_head_dim || 128;
     // Per-layer recurrent state (bf16), independent of length. With published Gated-DeltaNet / Mamba-2 geometry:
@@ -474,9 +476,20 @@
     const tfl = effTflops(g, rtKey);
     const usable = usableGiB(g);
     const dBw = deviceBw(g);
-    // llama.cpp/Ollama single-stream CUDA dequant kernels achieve ~68% of their consumer bwEff on datacenter HBM GPUs.
-    const dcGgufBw = (rtKey === 'llamacpp' || rtKey === 'ollama') && g.category === 'datacenter' ? 0.68 : 1;
-    const bwEff = R.bwEff * dBw.v * dcGgufBw;
+    const gguf = rtKey === 'llamacpp' || rtKey === 'ollama';
+    // llama.cpp/Ollama single-stream CUDA dequant kernels achieve ~68% of their consumer bwEff on datacenter HBM GPUs. GDDR
+    // datacenter cards run like workstation cards (scoreboard #15013: L40 153.8 tok/s = 67% of 864 GB/s; A40 69%).
+    const hbmDc = g.category === 'datacenter' && !/^(l40|l4_|l20|a40|a10g|a16|a2_)/.test(g.key);
+    const dcGgufBw = gguf && hbmDc ? 0.68 : 1;
+    // Unquantized GGUF streams closer to peak than the dequant kernels (XiongjieDai 8B F16: RTX 4090 54.3 tok/s = 87% of 1008 GB/s).
+    const unq = q === QUANTS.fp16 || q === QUANTS.fp32;
+    const f16Gguf = gguf && unq && g.vendor === 'nvidia' && !hbmDc ? 1.13 : 1;
+    // Apple Metal (scoreboard #4167, M2–M5): 82% of bandwidth (70% on the two-die Ultra) plus a per-layer cost by format (below);
+    // M4 Max F16 / Q8_0 / Q4_0 stream 77% / 69% / 57% of 546 GB/s once that cost is included.
+    const appleGguf = gguf && isApple(g);
+    const bwEff = appleGguf ? (/ultra/.test(g.key) ? 0.70 : 0.82) : R.bwEff * dBw.v * dcGgufBw * f16Gguf;
+    const bwNote = appleGguf ? `${R.label} on Apple Metal${/ultra/.test(g.key) ? ', two-die Ultra' : ''}`
+      : `${R.label} ${R.bwEff}${dBw.v < 1 ? ` × device ${dBw.v}` : ''}${dcGgufBw < 1 ? ` × DC ${dcGgufBw}` : ''}${f16Gguf > 1 ? ` × F16 ${f16Gguf}` : ''}`;
     const bw = g.bandwidth_gbs * 1e9;
 
     const seq = inp.seq;
@@ -661,13 +674,19 @@
     const tpCompEff = Lyt.tp > 1 ? 1 / (1 + 0.04 * Math.log2(Lyt.tp)) : 1;
     const tCompStage = (effFlopsTok * sMicro / Lyt.pp) / (tfl.v * 1e12 * Lyt.tp * tpCompEff * 0.5);
     // Per-layer launch/dispatch overhead: MoE launches router+top-k+permute+grouped-GEMM; multi-GPU MoE + MLA add dispatch/combine sync.
-    // Calibrated at batch 1: MLA-MoE TP8 (DeepSeek-V3/R1 8×H200: vLLM 15.9 ms, SGLang 21.0 ms per token) and GQA-MoE TP8
-    // (gpt-oss-120b TP8/EP1 TensorRT-LLM 8×B200: 420 tok/s ⇒ ≈58 µs per MoE layer incl. 2 all-reduces).
-    const moeMult = G.moe ? (Lyt.tp > 1 ? (G.mla ? 36 : 10) : 2.5) : 1;
-    // llama.cpp / Ollama on datacenter GPUs: ≈34 µs per layer per token (scoreboard #15013, Llama-2-7B Q4_0: H100 268 and
-    // A100 191 tok/s both imply +0.78 ms per token over the bandwidth time at 32 layers).
-    const ggufDc = (rtKey === 'llamacpp' || rtKey === 'ollama') && g.category === 'datacenter';
-    const layerUsEff = (ggufDc ? 34 : R.layerUs) * moeMult;
+    // MLA-MoE under TP fitted to InferenceX (2026, 569 single-node rows; DeepSeek-R1 SGLang FP8 TP8 on 8×H200 9.70 ms per token
+    // at c4 ≈ 108 µs per layer); the old 36× came from early-2025 vLLM/SGLang (15.9 / 21.0 ms). GQA-MoE TP8: gpt-oss-120b
+    // TP8/EP1 TensorRT-LLM 8×B200 420 tok/s (InferenceX 432 at c4) ⇒ ≈58 µs per MoE layer incl. 2 all-reduces.
+    // Compressed-KV MLA (DeepSeek-V4: KV compressor + indexer kernels per layer) runs heavier: 20× fits InferenceX V4-Pro on
+    // B200/B300 (vLLM, SGLang, TensorRT-LLM; 89 rows, median error 10%).
+    const moeMult = G.moe ? (Lyt.tp > 1 ? (G.mla ? (m.kv_compress_layers ? 20 : 12) : 10) : 2.5) : 1;
+    // llama.cpp / Ollama on datacenter HBM GPUs: ≈34 µs per layer per token (scoreboard #15013, Llama-2-7B Q4_0: H100 268 and
+    // A100 191 tok/s both imply +0.78 ms per token over the bandwidth time at 32 layers). HIP on AMD Instinct: ≈86 µs
+    // (scoreboard #15021: MI300X 218.5 and MI210 130.2 tok/s both leave 85–88 µs per layer). Apple Metal by weight format:
+    // F16 20 µs, Q8_0 45 µs, 4–6-bit 80 µs.
+    const ggufDc = gguf && hbmDc;
+    const appleLayerUs = unq ? 20 : q === QUANTS.q8_0 ? 45 : 80;
+    const layerUsEff = (appleGguf ? appleLayerUs : ggufDc ? (g.vendor === 'amd' ? 86 : 34) : R.layerUs) * moeMult;
     const tFixedStage = (R.stepMs / Lyt.pp + (G.L / Lyt.pp) * layerUsEff / 1000) / 1000;
     const tpLink0 = LINKS[inp.cluster && Lyt.tp > Lyt.perNode ? Lyt.inter : Lyt.intra] || LINKS.pcie4;
     // Point-to-point meshes (AMD xGMI): a GPU reaches its TP peers over (TP − 1) separate links, not the whole fabric.
@@ -701,7 +720,7 @@
     const tComm = tCommStage * Lyt.pp;
     const tStepDecode = (tStage * Lyt.pp) / ppEff;
     T.push({ g: 'Speed', k: 'Bytes read per step', f: `${G.moe ? `weights: shared ${fmtBytes(sharedB)} + routed ${fmtBytes(G.routed * effBpw / 8)} × (1 − (1 − ${G.f.toFixed(3)})^${sMicro.toFixed(sMicro % 1 ? 1 : 0)}) [MoE kernels at ${Math.round(moeEff * 100)}% eff.] = ` : 'weights '}${fmtBytes(wRead)} + KV at avg context ${Math.round(avgCtx).toLocaleString()} × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} seq ${fmtBytes(kvRead)}`, v: fmtBytes(wRead + kvRead) });
-    T.push({ g: 'Speed', k: 'Memory time', f: `(weights ÷ ${Lyt.tp} + KV ÷ ${kvShard}) ÷ (${g.bandwidth_gbs} GB/s × ${bwEff.toFixed(2)} efficiency (${R.label} ${R.bwEff}${dBw.v < 1 ? ` × device ${dBw.v}` : ''}${dcGgufBw < 1 ? ` × DC ${dcGgufBw}` : ''}))`, v: ms(tMem) });
+    T.push({ g: 'Speed', k: 'Memory time', f: `(weights ÷ ${Lyt.tp} + KV ÷ ${kvShard}) ÷ (${g.bandwidth_gbs} GB/s × ${bwEff.toFixed(2)} efficiency (${bwNote}))`, v: ms(tMem) });
     T.push({ g: 'Speed', k: 'Compute time', f: `(${(linFlopsTok / 1e9).toFixed(1)} GFLOP matmul${lowP.x > 1 ? ` ÷ ${lowP.x} (${lowP.label})` : ''} + ${((attnFlopsDec(avgCtx) + idxFlopsDec(avgCtx)) / 1e9).toFixed(2)} GFLOP attention${K.sparse ? ' + indexer' : ''}) × ${sMicro.toFixed(sMicro % 1 ? 1 : 0)} ÷ (${tfl.v.toFixed(1)} TFLOPS × 0.5)  — ${tfl.note}`, v: ms(tComp) });
     T.push({ g: 'Speed', k: 'Fixed overhead', f: `${R.stepMs} ms/step + ${G.L} layers × ${layerUsEff.toFixed(0)} µs${tComm ? ` + interconnect ${ms(tComm)}` : ''}${ppM > 1 ? ` (${ppM} pipelined stages)` : ''}`, v: ms(tFixed + tComm) });
 
@@ -711,14 +730,18 @@
     // llama.cpp/Ollama prefill uses FP16-acc/MMQ on consumer GeForce (2× halved FP32-acc rate), NOT on datacenter GPUs.
     const ggufPath = q.gguf && (rtKey === 'llamacpp' || rtKey === 'ollama');
     const consumerNv = g.vendor === 'nvidia' && (isGeForceFp16Acc(g) || /^4090/.test(g.key));
-    const int8x = g.int8_tensor === false ? 1 : (consumerNv ? 2 : 1);
+    // L40 lists the half-rate FP32-accumulate 181 TFLOPS like GeForce, so INT8 MMQ also doubles it (pp512 10,098 tok/s).
+    const int8x = g.int8_tensor === false ? 1 : (consumerNv || /^l40_/.test(g.key) ? 2 : 1);
+    // Flash attention (llama.cpp default since `-fa auto`) speeds GeForce prefill: scoreboard #15013 pp512 with FA is
+    // 1.35× the no-FA calibration across 15 RTX 30/40/50 cards (RTX 4090 14,771 tok/s = 197 TFLOPS).
+    const faX = consumerNv ? 1.35 : 1;
     // Matmul speed-up in prefill: INT8 MMQ (llama.cpp on GeForce) or FP8/FP4 tensor cores; attention stays BF16.
     const pfLinX = ggufPath && !isApple(g) ? int8x : fp8x;
     const pfTfl = tfl.v * pfLinX;
     // llama.cpp MMQ prefill on datacenter GPUs is limited by integer dequant on quantized weight matmuls (≈ 3.86 · TFLOPS^0.514;
     // scoreboard pp512: H100 9918 vs A100 4850 tok/s = 2.04× for 3.17× the TFLOPS), while FP16 FlashAttention runs at R.pfEff.
     const pfAttnEff = isApple(g) ? 0.68 : R.pfEff;
-    const pfLinEff = isApple(g) ? 0.68 : (ggufPath && g.category === 'datacenter' ? Math.min(R.pfEff, 3.86 * Math.pow(tfl.v * pfLinX, -0.486)) : R.pfEff);
+    const pfLinEff = isApple(g) ? 0.68 : (ggufPath && hbmDc ? Math.min(R.pfEff, 3.86 * Math.pow(tfl.v * pfLinX, -0.486)) : R.pfEff * (ggufPath ? faX : 1));
     // Prefill attention runs un-absorbed (MLA: 4 × mean(qk 192, v 128) = 4 × 160 per head per pair).
     const hfFullPf = 4 * (K.mla ? G.hd : (m.global_head_dim || G.hd));
     const swaPairsOf = (t) => K.window && t > K.window ? K.window * (t - K.window / 2) : t * t / 2;
