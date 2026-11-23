@@ -1,0 +1,238 @@
+table,Chip,pp512 t/s,tg128 t/s,Commit,Comments
+vulkan_no_fa,Nvidia RTX 5090,10381.64 ± 508.84,263.63 ± 0.91,ca71fb9,coopmat2
+vulkan_no_fa,Nvidia RTX 4090,9452.03 ± 187.70,187.97 ± 0.21,4ae88d0,coopmat2
+vulkan_no_fa,Nvidia RTX 5080,7444.99 ± 20.11,185.10 ± 0.54,f6b533d,coopmat2
+vulkan_no_fa,AMD Radeon RX 7900 XTX,3726.99 ± 22.09,182.63 ± 0.22,304665f,
+vulkan_no_fa,Nvidia RTX 3090,4666.15 ± 12.89,164.05 ± 0.89,d05fe1d,coopmat2
+vulkan_no_fa,Nvidia A100,6389.86 ± 4.83,160.78 ± 0.16,2257758,coopmat2
+vulkan_no_fa,Nvidia RTX 5090 Mobile,5546.39 ± 17.00,149.41 ± 2.13,4bc272f,coopmat2
+vulkan_no_fa,Nvidia RTX 4080 Super,7101.18 ± 269.79,147.13 ± 5.64,81086cd,coopmat2
+vulkan_no_fa,AMD Radeon AI Pro R9700,5609.82 ± 73.99,145.67 ± 0.07,dd1ea52,
+vulkan_no_fa,Nvidia RTX 3080,4287.11 ± 55.50,139.15 ± 0.05,7c7d6ce,coopmat2
+vulkan_no_fa,Nvidia RTX A5000,3641.55 ± 9.05,139.89 ± 0.69,4ae88d0,coopmat2
+vulkan_no_fa,AMD Radeon RX 9070 XT,5201.65 ± 35.50,136.56 ± 0.04,9a4580b,
+vulkan_no_fa,Nvidia RTX 5070 Ti,6213.63 ± 27.72,135.63 ± 0.18,d13d0f6,coopmat2
+vulkan_no_fa,Nvidia Tesla V100,1391.39 ± 1.19,129.58 ± 0.58,7d77f07,
+vulkan_no_fa,Nvidia RTX 4070 Ti Super,6099.18 ± 154.30,129.45 ± 0.18,4ae88d0,coopmat2
+vulkan_no_fa,AMD Radeon RX 7900 XT,2941.58 ± 17.17,123.18 ± 0.40,71e74a3,
+vulkan_no_fa,AMD Radeon RX 9070,3164.10 ± 66.84,119.71 ± 3.40,21c17b5,
+vulkan_no_fa,AMD Radeon RX 7800 XT,2017.33 ± 19.30,118.27 ± 0.27,4fdbc1e,
+vulkan_no_fa,AMD Radeon RX 7900 GRE,2336.31 ± 7.52,116.11 ± 0.26,4b2a477,
+vulkan_no_fa,Apple M3 Ultra,1116.83 ± 0.55,115.54 ± 0.78,2d451c8,MoltenVK
+vulkan_no_fa,Intel Arc Pro B70,4724.21 ± 16.70,113.59 ± 0.09,620d222,
+vulkan_no_fa,Nvidia A30,3290.70 ± 12.03,111.48 ± 0.18,583cb83,
+vulkan_no_fa,Nvidia RTX 4070 Ti,4981.44 ± 102.35,110.53 ± 0.00,516a4ca,coopmat2
+vulkan_no_fa,Nvidia RTX 4070 Super,4608.20 ± 31.66,108.74 ± 0.18,c945aaa,coopmat2
+vulkan_no_fa,AMD Radeon Instinct MI50,1119.55 ± 1.50,108.51 ± 0.81,3af34b9,
+vulkan_no_fa,AMD Radeon RX 6900 XT,1901.20 ± 36.70,108.00 ± 0.03,a972fae,
+vulkan_no_fa,AMD Radeon Pro VII,912.47 ± 1.06,106.03 ± 0.89,N/A,
+vulkan_no_fa,Nvidia Titan V,796.29 ± 5.84,105.06 ± 0.27,e56abd2,
+vulkan_no_fa,AMD Radeon RX 6800,1593.97 ± 1.38,101.47 ± 0.35,f1cee99,
+vulkan_no_fa,AMD Radeon VII,1059.14 ± 0.56,101.19 ± 0.53,77d6ae4,
+vulkan_no_fa,AMD Radeon RX 6800 XT,1752.92 ± 1.71,100.32 ± 0.97,N/A,
+vulkan_no_fa,Nvidia RTX 2080 Ti,1888.24 ± 9.20,97.58 ± 6.60,N/A,
+vulkan_no_fa,AMD Radeon Pro W6800X Duo,687.71 ± 4.33,94.82 ± 0.12,N/A,
+vulkan_no_fa,Nvidia RTX 5060 Ti,3460.92 ± 7.16,93.51 ± 0.15,89f10ba,coopmat2
+vulkan_no_fa,Nvidia RTX 4070,3179.37 ± 46.16,92.29 ± 0.28,9a48399,
+vulkan_no_fa,Nvidia RTX 3060 Ti,2361.43 ± 4.32,86.74 ± 0.34,b42c7fa,coopmat2
+vulkan_no_fa,AMD Radeon Pro W6800X,510.80 ± 0.13,86.47 ± 0.46,13b4548,MoltenVK
+vulkan_no_fa,AMD Radeon RX 6700 XT,1051.20 ± 0.98,83.88 ± 0.08,6d75883,
+vulkan_no_fa,AMD Radeon RX 6750 XT,1040.58 ± 0.35,81.98 ± 0.03,228f34c,
+vulkan_no_fa,AMD Radeon Pro V620,1595.32 ± 1.59,81.78 ± 0.06,03d4698,
+vulkan_no_fa,Nvidia RTX 3070,2113.02 ± 7.38,78.71 ± 0.13,1b8fb81,
+vulkan_no_fa,AMD Radeon Instinct MI60,369.26 ± 2.48,78.16 ± 1.40,504af20,
+vulkan_no_fa,Nvidia RTX 3060,1815.70 ± 5.85,75.94 ± 0.80,92c0b38,coopmat2
+vulkan_no_fa,Apple M4 Max,724.77 ± 20.93,75.02 ± 0.14,1ece0cb6,
+vulkan_no_fa,Nvidia Tesla T10,1692.70 ± 2.05,75.01 ± 0.21,7f76692,coopmat2
+vulkan_no_fa,Nvidia RTX A4000,2248.14 ± 7.59,73.74 ± 0.08,f5245b5,coopmat2
+vulkan_no_fa,AMD Radeon RX 9060 XT,2844.80 ± 132.10,71.07 ± 0.10,f1cee99,
+vulkan_no_fa,AMD Radeon RX 5700 XT,529.69 ± 0.26,70.73 ± 0.04,4fdbc1e,
+vulkan_no_fa,Intel Arc B580,620.94 ± 15.33,70.14 ± 0.28,7f76692,
+vulkan_no_fa,AMD Radeon Pro V540,583.88 ± 6.56,69.64 ± 0.24,9da3dcd,
+vulkan_no_fa,AMD Radeon Pro W5700,449.85 ± 0.46,68.55 ± 0.15,23bc779,
+vulkan_no_fa,Nvidia GTX 1080 Ti,585.54 ± 1.16,67.75 ± 0.08,ac2557c,
+vulkan_no_fa,Intel Arc Pro B60,729.87 ± 0.70,65.25 ± 0.01,45b6604,
+vulkan_no_fa,Nvidia RTX 2070 Super,1199.13 ± 7.70,64.64 ± 0.20,b7552cf,
+vulkan_no_fa,Nvidia RTX 3070 Mobile,1689.40 ± 19.57,63.64 ± 0.39,ceff6bb,coopmat2
+vulkan_no_fa,AMD Radeon RX Vega 64,575.06 ± 1.03,63.43 ± 0.07,5dcb711,
+vulkan_no_fa,Nvidia Tesla P100,678.14 ± 1.40,63.16 ± 0.06,eec1e33,
+vulkan_no_fa,Nvidia P102-100,510.62 ± 0.08,62.83 ± 0.01,ac2557c,
+vulkan_no_fa,AMD BC-250,370.66 ± 0.04,62.32 ± 0.32,5886f4f,
+vulkan_no_fa,AMD Radeon RX 6650 XT,1029.52 ± 1.21,62.14 ± 0.02,dbb852b,
+vulkan_no_fa,Nvidia RTX 4060 Mobile,2135.66 ± 23.18,59.53 ± 0.03,a5c07dc,coopmat2
+vulkan_no_fa,Nvidia Tesla P40,488.06 ± 0.27,59.36 ± 0.16,N/A,
+vulkan_no_fa,Nvidia GB10,2789.51 ± 18.33,58.51 ± 0.04,657e011,coopmat2
+vulkan_no_fa,AMD Radeon RX 7600,1167.20 ± 20.39,58.03 ± 0.08,91f8c9c,
+vulkan_no_fa,Nvidia GTX 1660 Ti Mobile,511.67 ± 2.85,56.60 ± 0.07,b43556e,
+vulkan_no_fa,AMD Radeon Instinct MI25,439.42 ± 0.34,54.69 ± 0.03,2739a71,
+vulkan_no_fa,AMD Radeon RX 6600 XT,574.65 ± 0.86,53.92 ± 0.11,091592d,
+vulkan_no_fa,AMD Radeon RX 7600 XT,840.85 ± 3.02,53.02 ± 0.01,01d8eaa,
+vulkan_no_fa,Intel Arc A770,1073.85 + 29.68,52.56 + 0.11,a69d54f,
+vulkan_no_fa,AMD FirePro S9300 x2,247.26 ± 0.43,51.86 ± 0.11,eec1e33,Split across two GPUs
+vulkan_no_fa,AMD Ryzen Al Max+ 300 Series,1487.08 ± 16.51,51.81 ± 0.13,fb4b273,
+vulkan_no_fa,AMD Radeon RX 6600,758.50 ± 0.25,50.57 ± 0.01,86a9c79,
+vulkan_no_fa,AMD Radeon RX Vega 56,439.87 ± 0.61,50.23 ± 0.14,92c0b38,
+vulkan_no_fa,Intel Arc B570,913.95 ± 0.90,49.64 ± 0.03,7f76692,
+vulkan_no_fa,Nvidia RTX 3060 Mobile,1059.76 ± 3.54,49.03 ± 0.13,dbb3a47,
+vulkan_no_fa,AMD Radeon RX 6800M,861.99 ± 7.67,48.71 ± 0.71,8e6f8bc,
+vulkan_no_fa,AMD Radeon RX 6600M,605.59 ± 0.65,48.21 ± 0.07,fe5b78c,
+vulkan_no_fa,Intel Arc A770M,875.92 ± 2.16,47.69 ± 0.16,eeee367,
+vulkan_no_fa,Intel Arc Pro B50,1186.45 ± 4.43,46.30 ± 0.07,aa46bda,
+vulkan_no_fa,Nvidia P104-100,311.90 ± 0.22,46.18 ± 0.05,eec1e33,
+vulkan_no_fa,Nvidia RTX A2000,1245.19 ± 8.76,45.52 ± 0.54,b1afcab,coopmat2
+vulkan_no_fa,AMD Radeon RX 7600M XT,459.39 ± 2.34,45.28 ± 0.10,b9ab0a4,eGPU
+vulkan_no_fa,AMD Radeon Pro V340,375.41 ± 0.24,45.16 ± 0.06,9da3dcd,Split across two GPUs
+vulkan_no_fa,Nvidia GTX 1070 Ti,297.50 ± 0.54,42.86 ± 1.20,860a9e4,eGPU
+vulkan_no_fa,Intel Arc A750,1075.94 ± 13.89,42.66 ± 0.18,c1b1876,
+vulkan_no_fa,Nvidia RTX 4050 Mobile,1154.28 + 15.76,41.89 + 0.10,d79d8f3,
+vulkan_no_fa,Nvidia GTX 1070,321.57 ± 0.93,41.48 ± 0.09,eec1e33,
+vulkan_no_fa,AMD Radeon RX 470,207.16 ± 0.27,40.11 ± 0.11,32e41fa,
+vulkan_no_fa,Nvidia Tesla M40,92.48 ± 0.02,39.35 ± 1.22,b8372ee,
+vulkan_no_fa,AMD Radeon RX 580,258.03 ± 0.71,39.32 ± 0.03,de4c07f,
+vulkan_no_fa,AMD Radeon RX 570,226.11 ± 0.45,37.44 ± 0.03,e583f3b,
+vulkan_no_fa,AMD Radeon Pro W5500,315.39 ± 3.76,36.82 ± 0.38,860a9e4,
+vulkan_no_fa,AMD Radeon RX 480,248.66 ± 0.28,34.71 ± 0.14,3b15924,
+vulkan_no_fa,Apple M2 Ultra,205.98 ± 0.02,34.34 ± 0.12,dbb852b,Asahi Linux
+vulkan_no_fa,Nvidia GTX 980,186.24 ± 0.09,33.90 ± 0.51,860a9e4,
+vulkan_no_fa,Nvidia P106-100,183.78 ± 0.26,29.77 ± 0.04,23bc779,
+vulkan_no_fa,AMD FirePro W8100,155.22 ± 0.17,29.52 ± 0.05,4536363,
+vulkan_no_fa,Nvidia Tesla P4,265.54 ± 0.21,28.03 ± 0.14,24d2ee0,
+vulkan_no_fa,AMD Radeon RX 6500 XT,255.25 ± 0.35,27.81 ± 0.10,g9fdfcd,
+vulkan_no_fa,Apple M3,263.70 ± 0.02,26.39 ± 0.14,b9ab0a4,MoltenVK
+vulkan_no_fa,AMD FirePro S10000,94.78 ± 0.02,25.32 ± 0.02,914a82d,Split across two GPUs
+vulkan_no_fa,Intel Core Ultra 300 Series,1380.07 ± 10.98,24.45 ± 0.05,481c65f,
+vulkan_no_fa,Intel Core Ultra 200 Series,864.99 ± 7.49,24.37 ± 0.17,4a89937,
+vulkan_no_fa,Nvidia Quadro P2000,169.55 ± 0.17,23.05 ± 0.03,63f8fe0,
+vulkan_no_fa,AMD Ryzen AI 300 Series,479.07 ± 0.41,22.41 ± 0.18,N/A,
+vulkan_no_fa,AMD Ryzen 6000 Series,240.89 ± 0.52,21.26 ± 0.08,ee09828,
+vulkan_no_fa,Apple M2 Pro,62.70 ± 0.03,20.95 ± 0.11,1fe0029,Asahi Linux
+vulkan_no_fa,Nvidia GTX 1050 Ti,136.42 ± 0.67,20.96 ± 0.21,2f0c2db,
+vulkan_no_fa,AMD Ryzen 7000 Series,281.62 ± 1.56,19.91 ± 0.07,ebce03e,
+vulkan_no_fa,AMD Ryzen 8000 Series,267.27 ± 7.61,19.81 ± 0.08,1e9d771,
+vulkan_no_fa,AMD Ryzen Z1 Extreme,199.36 ± 7.02,18.77 ± 0.02,53ff6b9,
+vulkan_no_fa,AMD Ryzen AI 400 Series,131.33 ± 1.20,17.66 ± 0.15,cb26014,
+vulkan_no_fa,AMD Steam Deck,144.31 ± 2.74,17.52 ± 0.15,48d22e2,
+vulkan_no_fa,AMD FirePro D700,69.95 ± 0.04,16.62 ± 0.01,d3bd719,"MoltenVK, running in FP16 mode on FP32 only chip"
+vulkan_no_fa,AMD Radeon Pro WX 4100,78.79 ± 0.10,16.05 ± 0.07,860a9e4,
+vulkan_no_fa,Apple M2,50.79 ± 0.16,13.50 ± 0.02,8c0d6bb,Asahi Linux
+vulkan_no_fa,Apple M1,38.29 ± 0.00,12.47 ± 0.03,2370665,Asahi Linux
+vulkan_no_fa,AMD Ryzen 5000 Series,90.55 ± 0.08,10.98 ± 0.07,d84635b,
+vulkan_no_fa,Intel Core 1100 Series,187.20 ± 1.78,10.39 ± 0.04,abb9f3c,
+vulkan_no_fa,AMD Radeon RX 550,52.66 ± 0.49,10.20 ± 0.01,N/A,
+vulkan_no_fa,AMD Ryzen 4000 Series,103.87 ± 0.02,9.63 ± 0.01,4b385bf,
+vulkan_no_fa,Nvidia Tesla K80,89.46 ± 0.10,9.39 ± 0.06,5d46bab,Running on single GPU
+vulkan_no_fa,Nvidia Tesla K40,64.37 ± 0.09,9.30 ± 0.19,eec1e33,
+vulkan_no_fa,MediaTek Dimensity 9400,38.36 ± 15.15,8.92 ± 0.06,b9ab0a4,GPU supports coopmat but pp512 is faster with it turned off
+vulkan_no_fa,Intel Core Ultra 100 Series,185.51 ± 0.22,8.21 ± 0.07,1d72c84,
+vulkan_no_fa,AMD Ryzen 3000 Series,48.63 ± 0.10,8.49 ± 0.01,1fe0029,
+vulkan_no_fa,Intel Core 1000 Series,25.58 ± 0.00,4.25 ± 0.18,N/A,
+vulkan_no_fa,Intel Core 8000 Series,25.43 ± 0.17,3.35 ± 0.03,c4df49a,
+vulkan_no_fa,Intel N150,28.84 ± 0.02,2.93 ± 0.00,4f63cd7,
+vulkan_no_fa,CIX CD8180,2.80 ± 0.01,5.51 ± 0.00,4dca015,
+vulkan_fa,Nvidia RTX 5090,11796.38 ± 601.36,273.68 ± 0.52,ca71fb9,coopmat2
+vulkan_fa,Nvidia RTX 5080,8054.59 ± 35.68,192.17 ± 0.21,f6b533d,coopmat2
+vulkan_fa,AMD Radeon RX 7900 XTX,3889.54 ± 16.52,190.92 ± 0.19,304665f,
+vulkan_fa,Nvidia RTX 4090,10830.41 ± 36.25,190.10 ± 0.31,4ae88d0,coopmat2
+vulkan_fa,Nvidia RTX 5070 Ti,7567.94 ± 41.96,176.18 ± 1.12,0d0764d,coopmat2
+vulkan_fa,Nvidia RTX 3090,5200.68 ± 16.44,171.61 ± 2.69,d05fe1d,coopmat2
+vulkan_fa,Nvidia A100,7064.40 ± 1.63,170.56 ± 0.02,2257758,coopmat2
+vulkan_fa,Nvidia RTX 5090 Mobile,6011.18 ± 20.90,154.31 ± 1.61,4bc272f,coopmat2
+vulkan_fa,AMD Radeon AI Pro R9700,5907.66 ± 85.27,152.70 ± 0.02,dd1ea52,
+vulkan_fa,Nvidia RTX 4080 Super,8007.37 ± 46.03,150.20 ± 0.26,81086cd,coopmat2
+vulkan_fa,Nvidia RTX 3080,4913.83 ± 21.52,145.74 ± 0.16,7c7d6ce,coopmat2
+vulkan_fa,Nvidia Tesla V100,1411.25 ± 2.12,142.13 ± 0.03,7d77f07,
+vulkan_fa,AMD Radeon RX 9070 XT,5603.63 ± 143.02,142.00 ± 0.02,9a4580b,
+vulkan_fa,Nvidia RTX A5000,4071.22 ± 13.13,140.43 ± 0.22,4ae88d0,coopmat2
+vulkan_fa,Nvidia RTX 4070 Ti Super,6801.18 ± 40.12,135.81 ± 4.29,4ae88d0,coopmat2
+vulkan_fa,AMD Radeon RX 7800 XT,2197.05 ± 6.03,124.86 ± 0.10,4fdbc1e,
+vulkan_fa,AMD Radeon RX 7900 XT,2701.13 ± 8.75,120.62 ± 0.36,71e74a3,
+vulkan_fa,AMD Radeon RX 9070,2859.98 ± 31.53,119.51 ± 0.13,21c17b5,
+vulkan_fa,AMD Radeon Instinct MI50,1127.37 ± 0.48,117.94 ± 0.02,3af34b9,
+vulkan_fa,Nvidia A30,3158.25 ± 22.59,117.43 ± 0.23,583cb83,
+vulkan_fa,Intel Arc Pro B70,4570.29 ± 9.61,112.89 ± 1.06,620d222,
+vulkan_fa,Nvidia RTX 4070 Ti,5515.26 ± 7.92,113.52 ± 0.00,516a4ca,coopmat2
+vulkan_fa,Nvidia RTX 4070 Super,5198.91 ± 29.02,112.00 ± 0.17,c945aaa,coopmat2
+vulkan_fa,AMD Radeon VII,1007.19 ± 6.55,110.86 ± 0.34,77d6ae4,
+vulkan_fa,AMD Radeon RX 7900 GRE,2251.37 ± 2.91,110.50 ± 0.23,4b2a477,
+vulkan_fa,Nvidia Titan V,792.74 ± 4.30,109.21 ± 0.72,e56abd2,
+vulkan_fa,AMD Radeon Pro VII,783.94 ± 0.77,108.45 ± 0.48,N/A,
+vulkan_fa,AMD Radeon RX 6800,1597.95 ± 1.63,106.49 ± 0.23,f1cee99,
+vulkan_fa,AMD Radeon RX 6900 XT,1761.93 ± 4.75,106.15 ± 0.04,a972fae,
+vulkan_fa,Nvidia RTX 2080 Ti,1936.25 ± 32.08,100.99 ± 0.24,N/A,
+vulkan_fa,AMD Radeon RX 6800 XT,1704.79 ± 0.71,100.50 ± 0.06,N/A,
+vulkan_fa,AMD Radeon Pro W6800X Duo,795.28 ± 0.72,100.08 ± 0.02,N/A,
+vulkan_fa,Nvidia RTX 5060 Ti,3912.65 ± 5.86,97.01 ± 0.14,89f10ba,coopmat2
+vulkan_fa,Nvidia RTX 4070,4293.57 ± 27.70,91.49 ± 0.89,9a48399,coopmat2
+vulkan_fa,Nvidia RTX 3060 Ti,2644.95 ± 26.82,90.35 ± 1.00,b42c7fa,coopmat2
+vulkan_fa,AMD Radeon RX 6750 XT,997.05 ± 0.45,82.29 ± 0.06,228f34c,
+vulkan_fa,AMD Radeon RX 6700 XT,1010.90 ± 12.89,81.86 ± 0.19,6d75883,
+vulkan_fa,Nvidia RTX 3060,2012.88 ± 10.12,80.59 ± 0.02,92c0b38,coopmat2
+vulkan_fa,AMD Radeon Pro V620,1556.31 ± 2.82,79.24 ± 0.09,03d4698,
+vulkan_fa,Nvidia RTX A4000,2482.74 ± 26.05,76.07 ± 0.08,f5245b5,coopmat2
+vulkan_fa,Nvidia Tesla T10,1840.14 ± 1.22,76.05 ± 0.13,7f76692,coopmat2
+vulkan_fa,AMD Radeon RX 5700 XT,538.31 ± 0.35,74.43 ± 0.03,4fdbc1e,
+vulkan_fa,AMD Radeon RX 9060 XT,3228.15 ± 16.15,74.01 ± 0.03,f1cee99,
+vulkan_fa,Intel Arc B580,419.49 ± 3.37,72.00 ± 0.24,7f76692,
+vulkan_fa,Apple M4 Max,557.46 ± 26.87,71.79 ± 4.16,1ece0cb6,
+vulkan_fa,Nvidia GTX 1080 Ti,647.81 ± 1.75,71.58 ± 0.03,ac2557c,
+vulkan_fa,AMD Radeon Pro W5700,446.98 ± 0.39,71.30 ± 0.24,23bc779,
+vulkan_fa,Intel Arc Pro B60,726.81 ± 0.38,68.06 ± 0.01,45b6604,
+vulkan_fa,AMD Radeon RX Vega 64,584.98 ± 1.12,67.70 ± 0.09,5dcb711,
+vulkan_fa,Nvidia Tesla P100,685.51 ± 0.88,66.48 ± 0.02,eec1e33,
+vulkan_fa,Nvidia P102-100,574.56 ± 0.56,66.48 ± 0.02,ac2557c,
+vulkan_fa,AMD BC-250,356.87 ± 1.24,63.14 ± 0.09,5886f4f,
+vulkan_fa,Nvidia RTX 3070 Mobile,1832.07 ± 57.14,62.92 ± 0.37,ceff6bb,coopmat2
+vulkan_fa,AMD Radeon RX 6650 XT,1088.90 ± 0.40,64.53 ± 0.75,dbb852b,
+vulkan_fa,AMD Radeon RX 7600,1353.47 ± 26.13,60.88 ± 0.25,91f8c9c,
+vulkan_fa,Nvidia GB10,3321.91 ± 5.86,60.39 ± 0.05,657e011,coopmat2
+vulkan_fa,Nvidia RTX 4060 Mobile,2358.03 ± 12.17,60.01 ± 0.08,a5c07dc,coopmat2
+vulkan_fa,Nvidia Tesla P40,484.37 ± 0.27,59.22 ± 0.15,N/A,
+vulkan_fa,Nvidia GTX 1660 Ti Mobile,514.34 ± 0.88,57.30 ± 0.42,b43556e,
+vulkan_fa,AMD Radeon RX 7600 XT,1024.38 ± 7.56,56.11 ± 0.02,01d8eaa,
+vulkan_fa,AMD FirePro S9300 x2,243.33 ± 0.22,55.64 ± 0.06,eec1e33,Split across two GPUs
+vulkan_fa,AMD Ryzen Al Max+ 300 Series,1704.30 ± 16.90,54.38 ± 0.30,fb4b273,
+vulkan_fa,AMD Radeon RX 6600,804.64 ± 0.21,53.17 ± 0.02,86a9c79,
+vulkan_fa,Intel Arc A770,1119.68 + 30.25,53.07 + 0.09,a69d54f,
+vulkan_fa,AMD Radeon RX Vega 56,428.54 ± 0.50,52.66 ± 0.03,92c0b38,
+vulkan_fa,Intel Arc B570,288.51 ± 0.09,50.49 ± 0.05,7f76692,
+vulkan_fa,AMD Radeon RX 6800M,784.16 ± 2.76,49.06 ± 0.34,8e6f8bc,
+vulkan_fa,Nvidia RTX A2000,1361.85 ± 3.26,45.69 ± 0.20,b1afcab,coopmat2
+vulkan_fa,Intel Arc A770M,384.74 ± 0.78,45.68 ± 0.06,eeee367,
+vulkan_fa,Nvidia P104-100,325.30 ± 0.25,48.64 ± 0.04,eec1e33,
+vulkan_fa,Intel Arc Pro B50,1122.53 ± 3.73,47.69 ± 0.06,aa46bda,
+vulkan_fa,AMD Radeon Pro V340,360.23 ± 0.74,47.54 ± 0.06,9da3dcd,Split across two GPUs
+vulkan_fa,Intel Arc A750,303.37 ± 1.44,43.96 ± 0.03,c1b1876,
+vulkan_fa,Nvidia GTX 1070 Ti,292.85 ± 0.23,43.42 ± 0.34,860a9e4,eGPU
+vulkan_fa,AMD Radeon RX 470,211.25 ± 0.88,43.35 ± 0.22,32e41fa,
+vulkan_fa,Nvidia GTX 1070,330.84 ± 1.02,43.33 ± 0.06,360d653,
+vulkan_fa,Nvidia Tesla M40,93.35 ± 0.01,41.68 ± 0.01,b8372ee,
+vulkan_fa,AMD Radeon RX 570,229.23 ± 0.45,40.18 ± 0.00,e583f3b,
+vulkan_fa,AMD Radeon RX 480,194.52 ± 0.61,37.23 ± 0.09,0bcb40b,
+vulkan_fa,Apple M2 Ultra,198.83 ± 0.85,36.07 ± 0.11,dbb852b,Asahi Linux
+vulkan_fa,Nvidia GTX 980,180.97 ± 0.74,34.16 ± 0.10,860a9e4,
+vulkan_fa,Nvidia P106-100,183.40 ± 0.34,30.79 ± 0.32,23bc779,
+vulkan_fa,AMD FirePro W8100,140.52 ± 0.34,29.28 ± 0.14,4536363,
+vulkan_fa,Nvidia Tesla P4,287.14 ± 0.29,28.37 ± 0.24,24d2ee0,
+vulkan_fa,Intel Core Ultra 200 Series,867.27 ± 2.35,25.12 ± 0.10,4a89937,
+vulkan_fa,Intel Core Ultra 300 Series,1332.41 ± 5.02,23.93 ± 0.16,481c65f,
+vulkan_fa,Nvidia Quadro P2000,181.71 ± 0.12,23.77 ± 0.02,63f8fe0,
+vulkan_fa,AMD Ryzen AI 300 Series,532.59 ± 3.55,23.93 ± 0.16,N/A,
+vulkan_fa,AMD Ryzen 8000 Series,311.02 ± 0.12,21.28 ± 0.01,1e9d771,
+vulkan_fa,AMD Ryzen 6000 Series,277.91 ± 0.37,21.15 ± 0.09,ee09828,
+vulkan_fa,Apple M2 Pro,58.86 ± 0.02,20.97 ± 0.03,1fe0029,Asahi Linux
+vulkan_fa,AMD Ryzen 7000 Series,312.85 ± 2.51,20.09 ± 0.35,835b2b9,
+vulkan_fa,Nvidia GTX 1050 Ti,127.54 ± 1.03,20.08 ± 0.17,2f0c2db,
+vulkan_fa,AMD Ryzen AI 400 Series,150.12 ± 1.11,19.03 ± 0.23,cb26014,
+vulkan_fa,AMD Steam Deck,164.34 ± 1.65,18.40 ± 0.14,48d22e2,
+vulkan_fa,AMD Radeon Pro WX 4100,75.59 ± 0.19,16.56 ± 0.04,860a9e4,
+vulkan_fa,Apple M1,35.93 ± 0.00,12.85 ± 0.02,2370665,Asahi Linux
+vulkan_fa,Apple M2,46.81 ± 0.08,12.25 ± 2.30,8c0d6bb,Asahi Linux
+vulkan_fa,AMD Ryzen 5000 Series,79.06 ± 0.01,10.75 ± 0.00,5d195f1,
+vulkan_fa,Intel Core 1100 Series,174.77 ± 4.47,10.58 ± 0.03,abb9f3c,
+vulkan_fa,Nvidia Tesla K40,64.37 ± 0.02,9.92 ± 0.06,eec1e33,
+vulkan_fa,AMD Ryzen 4000 Series,113.32 ± 0.01,9.87 ± 0.01,4b385bf,
+vulkan_fa,Nvidia Tesla K80,88.26 ± 0.19,9.49 ± 0.01,5d46bab,Running on single GPU
+vulkan_fa,AMD Ryzen 5 3000 Series,47.41 ± 0.14,8.47 ± 0.01,1fe0029,
+vulkan_fa,Intel Core Ultra 100 Series,77.66 ± 2.75,7.75 ± 0.05,2e89f76,
+vulkan_fa,Intel Core 8000 Series,25.55 ± 0.04,3.35 ± 0.02,c4df49a,
+vulkan_fa,Intel N150,25.59 ± 0.00,2.91 ± 0.00,4f63cd7,

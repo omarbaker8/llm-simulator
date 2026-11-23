@@ -1,0 +1,14 @@
+scenario,model_cls,num_params_B,flops_G,time_plain_s,mem_plain_GB,time_compile_s,mem_compile_GB,fullgraph,mode,github_sha
+black-forest-labs/FLUX.1-dev-bf16,FluxTransformer2DModel,11.9,74395.44,0.498 (0.5),22.64,0.39 (0.401),22.57,True,default,43e30028af5120d8b0868cb6975b9fad39cc4fab
+black-forest-labs/FLUX.1-dev-bnb-nf4,FluxTransformer2DModel,5.95,14883.18,0.519 (0.532),6.72,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+black-forest-labs/FLUX.1-dev-layerwise-upcasting,FluxTransformer2DModel,11.9,74395.44,0.556 (0.554),22.19,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+black-forest-labs/FLUX.1-dev-group-offload-leaf,FluxTransformer2DModel,11.9,74395.44,1.877 (1.876),0.56,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+Lightricks/LTX-Video-0.9.7-dev-bf16,LTXVideoTransformer3DModel,13.04,212025.96,1.454 (1.468),25.22,1.18 (1.201),25.05,True,default,43e30028af5120d8b0868cb6975b9fad39cc4fab
+Lightricks/LTX-Video-0.9.7-dev-layerwise-upcasting,LTXVideoTransformer3DModel,13.04,212025.96,1.509 (1.516),24.38,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+Lightricks/LTX-Video-0.9.7-dev-group-offload-leaf,LTXVideoTransformer3DModel,13.04,212025.96,2.593 (2.6),1.05,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+stabilityai/stable-diffusion-xl-base-1.0-bf16,UNet2DConditionModel,2.57,6763.01,0.072,5.05,0.054,5.13,True,default,43e30028af5120d8b0868cb6975b9fad39cc4fab
+stabilityai/stable-diffusion-xl-base-1.0-layerwise-upcasting,UNet2DConditionModel,2.57,6763.01,0.137 (0.142),4.89,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+stabilityai/stable-diffusion-xl-base-1.0-group-offload-leaf,UNet2DConditionModel,2.57,6763.01,0.515 (0.509),0.2,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+Wan-AI/Wan2.1-T2V-14B-Diffusers-bf16,WanTransformer3DModel,14.29,1678491.39,10.198 (10.423),30.24,8.708 (8.872),30.61,True,default,43e30028af5120d8b0868cb6975b9fad39cc4fab
+Wan-AI/Wan2.1-T2V-14B-Diffusers-layerwise-upcasting,WanTransformer3DModel,14.29,1678491.39,9.643 (9.846),26.78,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab
+Wan-AI/Wan2.1-T2V-14B-Diffusers-group-offload-leaf,WanTransformer3DModel,14.29,1678491.39,10.326 (10.473),3.5,nan,nan,,,43e30028af5120d8b0868cb6975b9fad39cc4fab

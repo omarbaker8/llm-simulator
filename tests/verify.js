@@ -336,7 +336,7 @@ console.log('7. Specialist audit regression tests');
 
   // 5. Multi-GPU MoE bs=1 realistic speeds + consumer MoE preserved
   const ds8 = run('deepseek-v3', 'h200_141', { quant: 'fp8', numGpus: 8, parallelism: 'tensor', seq: 4096, outputTokens: 512, users: 1 });
-  range(ds8.perf.tps, 35, 75, 'DeepSeek-V3 FP8 8×H200 TP8 u=1 ≈ 45–65 tok/s');
+  range(ds8.perf.tps, 80, 140, 'DeepSeek-V3 FP8 8×H200 TP8 u=1 ≈ 100–120 tok/s (InferenceX 2026: R1 SGLang 9.70 ms at c4)');
   // Reference is TensorRT-LLM (tech blog 9: TP8/EP1, batch 1, 1k/2k), so pin the runtime.
   const oss8 = run('gpt-oss-120b', 'b200_192', { quant: 'mxfp4', runtime: 'trtllm', numGpus: 8, parallelism: 'tensor', interconnect: 'nvlink_gen5', seq: 3072, outputTokens: 2048, users: 1 });
   range(oss8.perf.tps, 360, 480, 'gpt-oss-120b MXFP4 8×B200 TP8 TensorRT-LLM u=1 ≈ 420 tok/s');
@@ -358,7 +358,7 @@ console.log('7. Specialist audit regression tests');
   ok(C.lowPrecisionX(C.QUANTS.mxfp4, Gk('mi355x_288'), 'vllm').x === 4, 'MI355X MXFP4 = 4× BF16');
   ok(C.lowPrecisionX(C.QUANTS.fp8, Gk('h100_80'), 'hf').x === 1, 'HF Transformers does not get W8A8 FP8 tensor-core boost');
   ok(C.supportsFp8(Gk('mi355x_288')) && Gk('r100_288').bandwidth_gbs === 19200, 'MI355X added & Rubin R100 bandwidth 19200 GB/s');
-  near(C.usableGiB(Gk('b200_192')).v, 180, 1e-9, 'B200 usable HBM = 180 GiB (of 192 raw)');
+  near(C.usableGiB(Gk('b200_192')).v, 178.4, 1e-9, 'B200 usable HBM = 178.4 GiB (vLLM: 178.35 GiB total)');
   near(run('llama-3-1-8b', 'm4_max_64', { quant: 'int4', runtime: 'mlx' }).memory.weightsGiB, 8.03e9 * 4.5 / 8 / GiB, 1e-6, 'MLX 4-bit = 4.5 bpw across all weights');
   ok(run('gemma-3-1b', '4090_24', { quant: 'q4_k_m', runtime: 'llamacpp' }).memory.weightsGiB > 1.0e9 * 4.89 / 8 / GiB * 1.1, 'Gemma-3-1B Q4_K_M reflects Q8_0 large-vocab embedding overhead');
   ok(C.kvLayout(M('glm-53-flash'), C.geometry(M('glm-53-flash'))).elems === 512, 'GLM-5.3-Flash no_rope_kv uses 512 latent elems');

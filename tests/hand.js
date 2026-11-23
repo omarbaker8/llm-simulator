@@ -1,4 +1,4 @@
-// 59 hand-calculated checks. Every expected value below is derived here from published model configs
+// 72 hand-calculated checks. Every expected value below is derived here from published model configs
 // (Hugging Face config.json numbers written out as literals) and first-principles formulas — NOT from calc.js.
 // Usage: node tests/hand.js
 const fs = require('fs'), vm = require('vm'), path = require('path');
@@ -162,6 +162,58 @@ T('Decode', 'gpt-oss-20b MXFP4 4090 llama.cpp tok/s vs 222 (llama.cpp #15396)', 
   const nonKvP = L8.P * 2 + act(8192, 4096, 14336) * 1.03 + 1.30 * GiB;
   T('Serving', 'Llama-8B KV capacity, RTX PRO 6000 @0.92 (tokens; measured 586,384)', '(0.92 × 96 GiB − non-KV(8192 chunk)) ÷ 128 KiB', (0.92 * 96 * GiB - nonKvP) / kvTok8,
     kvCap(run(INF, 'llama-3-1-8b', 'rtx_6000_blackwell_server_96', { seq: 16384, outputTokens: 1 }), 16383, 0.92), 0.1);
+}
+
+/* ===== I. Real-world calibration (tests/real-data: llama.cpp scoreboards, InferenceX server logs, vLLM blog) ===== */
+{
+  // Llama-2-7B (config.json): the llama.cpp scoreboards' model. Untied 32000 × 4096 tables; MHA, 32 layers.
+  const L2 = { slug: 'llama-2-7b', name: 'Llama-2-7B', architecture: 'dense', num_of_params: '6.74', hidden_dim_size: 4096, ffn_intermediate_size: 11008, vocab_size: 32000,
+    num_of_layers: 32, num_attention_heads: 32, num_key_value_heads: 32, attention_head_dim: 128, attention_structure: 'mha', context_length: 4096, tie_word_embeddings: false, base_precision: 'fp16', task_type: 'text_generation' };
+  const runL2 = (gpu, o) => C.calculate({ ...INF, runtime: 'llamacpp', ...o }, L2, G(gpu));
+  const tab = 32000 * 4096, kvTok = 2 * 32 * 32 * 128 * 2;                 // 131.072M-param tables, 512 KiB KV per token
+  const kvTg = 65 * kvTok;                                                   // tg128 from an empty prompt: mean context 1 + 64
+  const rdF16 = (6.74e9 - tab) * 2 + kvTg;                                   // decode skips the input lookup table
+  const rdQ4 = tab * 6.5625 / 8 + (6.74e9 - 2 * tab) * 4.5 / 8 + kvTg;       // Q4_0 18 B / 32 weights; output tensor Q6_K
+  // pp512 FLOPs: 2 × (P − input table) × 512 + attention 4 · d · heads · 512²/2 per layer
+  const ppLin = 2 * (6.74e9 - tab) * 512, ppAttn = 4 * 128 * 32 * (512 * 512 / 2) * 32;
+  // B300: vLLM logs "Free memory on device (…/267.69 GiB)"; B200 178.35 GiB. vLLM caps at 0.90 of that.
+  T('Calibration', 'B300 vLLM memory budget per GPU (GiB)', '0.90 × 267.7 GiB (driver-visible, InferenceX logs)', 0.9 * 267.7, run(INF, 'llama-3-1-8b', 'b300_288').memory.capPerGpu, 0.05);
+  T('Calibration', 'B200 vLLM memory budget per GPU (GiB)', '0.90 × 178.4 GiB', 0.9 * 178.4, run(INF, 'llama-3-1-8b', 'b200_192').memory.capPerGpu, 0.05);
+  // Mistral Large 4 (vLLM blog): 63 layers store the 576-wide latent; only 44 layers own a 132 B indexer key.
+  T('Calibration', 'Mistral Large 4 KV per token, FP16 (bytes)', '63 × 576 × 2 B + 44 × 132 B', 63 * 576 * 2 + 44 * 132, run(INF, 'mistral-large-4-1t-a52b', 'h200_141', { numGpus: 8 }).memory.kvPerToken, 0.05);
+  // Apple llama.cpp (Metal) decode: 82% of bandwidth (70% on the two-die Ultra) + per-layer cost by weight format
+  // (F16 20 µs, Q8_0 45 µs, 4–6-bit 80 µs) + 0.35 ms per step. Fitted to scoreboard #4167: M4 Max F16 31.64, M2 Ultra Q4_0 94–109.
+  T('Calibration', 'Apple M4 Max llama.cpp F16 Llama-2-7B decode step (ms)', '13.25 GB ÷ (546 GB/s × 0.82) + 0.35 ms + 32 × 20 µs',
+    (rdF16 / (546e9 * 0.82) + 0.35e-3 + 32 * 20e-6) * 1e3, runL2('m4_max_128', { quant: 'fp16', seq: 129, outputTokens: 128 }).perf.stepMs, 0.5);
+  T('Calibration', 'Apple M2 Ultra llama.cpp Q4_0 Llama-2-7B decode step (ms)', '3.79 GB ÷ (800 GB/s × 0.70) + 0.35 ms + 32 × 80 µs',
+    (rdQ4 / (800e9 * 0.70) + 0.35e-3 + 32 * 80e-6) * 1e3, runL2('m2_ultra_192', { quant: 'q4_0', seq: 129, outputTokens: 128 }).perf.stepMs, 0.5);
+  // M5 GPU Neural Accelerators serve llama.cpp's Metal matmuls too (M5 Max pp512 3,220 vs M4 Max 886 tok/s): 60 TFLOPS × 0.68.
+  const p5 = runL2('m5_max_128', { quant: 'q4_0', seq: 513, outputTokens: 1 }).perf;
+  T('Calibration', 'Apple M5 Max llama.cpp Q4_0 pp512 prefill (ms)', '(6.77e12 + 6.9e10) FLOP ÷ (60 TFLOPS × 0.68) + 32 × 10 µs',
+    ((ppLin + ppAttn) / (60e12 * 0.68) + 32 * 10e-6) * 1e3, p5.ttft - p5.decodeStepMs, 0.5);
+  // GDDR datacenter cards (L40) run llama.cpp like workstation cards: no HBM penalty. L40 lists the half-rate FP32-acc 181 TFLOPS.
+  T('Calibration', 'L40 llama.cpp Q4_0 Llama-2-7B decode step (ms)', '3.79 GB ÷ (864 GB/s × 0.74) + 0.35 ms + 32 × 10 µs',
+    (rdQ4 / (864e9 * 0.74) + 0.35e-3 + 32 * 10e-6) * 1e3, runL2('l40_48', { quant: 'q4_0', seq: 129, outputTokens: 128 }).perf.stepMs, 0.5);
+  const pl = runL2('l40_48', { quant: 'q4_0', seq: 513, outputTokens: 1 }).perf;
+  T('Calibration', 'L40 llama.cpp Q4_0 pp512 prefill (ms)', '(6.77e12 ÷ (2 × 0.42) + 6.9e10 ÷ 0.42) ÷ 181 TFLOPS + 32 × 10 µs',
+    ((ppLin / (2 * 0.42) + ppAttn / 0.42) / 181e12 + 32 * 10e-6) * 1e3, pl.ttft - pl.decodeStepMs, 0.5);
+  // GeForce prefill with flash attention (llama.cpp default since -fa auto): MMQ matmuls 1.35× the no-FA calibration.
+  const pg = runL2('4090_24', { quant: 'q4_0', seq: 513, outputTokens: 1 }).perf;
+  T('Calibration', 'RTX 4090 llama.cpp Q4_0 pp512 prefill (ms)', '(6.77e12 ÷ (2 × 0.42 × 1.35) + 6.9e10 ÷ 0.42) ÷ 165 TFLOPS + 32 × 10 µs',
+    ((ppLin / (2 * 0.42 * 1.35) + ppAttn / 0.42) / 165e12 + 32 * 10e-6) * 1e3, pg.ttft - pg.decodeStepMs, 0.5);
+  // AMD Instinct (HIP): 86 µs per layer (MI300X 218.5 and MI210 130.2 tok/s both give 85–88 µs) with the HBM bandwidth factor.
+  T('Calibration', 'MI300X llama.cpp Q4_0 Llama-2-7B decode step (ms)', '3.79 GB ÷ (5300 GB/s × 0.74 × 0.88 × 0.68) + 0.35 ms + 32 × 86 µs',
+    (rdQ4 / (5300e9 * 0.74 * 0.88 * 0.68) + 0.35e-3 + 32 * 86e-6) * 1e3, runL2('mi300x_192', { quant: 'q4_0', seq: 129, outputTokens: 128 }).perf.stepMs, 0.5);
+  // llama.cpp F16 streams ~13% closer to peak than the quantized dequant kernels (XiongjieDai 8B F16: 4090 54.34 tok/s = 87%).
+  const rd8 = L8.P * 2 - L8.V * L8.h * 2 + 513 * (2 * 32 * 8 * 128 * 2);
+  T('Calibration', 'RTX 4090 llama.cpp F16 Llama-3.1-8B decode step (ms)', '15.08 GB ÷ (1008 GB/s × 0.74 × 1.13) + 0.35 ms + 32 × 10 µs',
+    (rd8 / (1008e9 * 0.74 * 1.13) + 0.35e-3 + 32 * 10e-6) * 1e3, run(INF, 'llama-3-1-8b', '4090_24', { runtime: 'llamacpp', seq: 1025, outputTokens: 1024 }).perf.stepMs, 0.5);
+  const arH = (h) => 10e-6 + 2 * 7 / 8 * h * 2 / (450e9 * 0.7);               // NVLink-4 all-reduce: 10 µs + 1-token message
+  // MoE under TP: InferenceX DeepSeek-R1 SGLang H200 TP8 9.70 ms at c4 ⇒ ≈108 µs per layer incl. all-reduces (fit: 12 × 6 µs + 2 × 10 µs).
+  T('Calibration', 'DeepSeek-R1 TP8 H200 vLLM fixed + all-reduce per token (ms)', '0.30 + 61 × 6 µs × 12 + 2 × 61 × (10 µs + transfer)',
+    (0.30e-3 + 61 * 72e-6 + 2 * 61 * arH(7168)) * 1e3, tr(run(INF, 'deepseek-r1-671b', 'h200_141', { quant: 'fp8', numGpus: 8 }), 'Fixed overhead'), 0.5);
+  T('Calibration', 'gpt-oss-120b TP8 H200 vLLM fixed + all-reduce per token (ms)', '0.30 + 36 × 6 µs × 10 + 2 × 36 × (10 µs + transfer)',
+    (0.30e-3 + 36 * 60e-6 + 2 * 36 * arH(2880)) * 1e3, tr(run(INF, 'gpt-oss-120b', 'h200_141', { quant: 'mxfp4', numGpus: 8 }), 'Fixed overhead'), 0.5);
 }
 
 /* ---------- report ---------- */

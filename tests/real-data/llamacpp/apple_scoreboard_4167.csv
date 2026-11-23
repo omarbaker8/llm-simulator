@@ -1,0 +1,57 @@
+table,Chip,BW [GB/s],GPU Cores,F16 PP [t/s],F16 TG [t/s],Q8_0 PP [t/s],Q8_0 TG [t/s],Q4_0 PP [t/s],Q4_0 TG [t/s],commit
+apple_summary,✅ M1 1,68,7,,,108.21,7.92,107.81,14.19,8e672ef
+apple_summary,✅ M1 1,68,8,,,117.25,7.91,117.96,14.15,8e672ef
+apple_summary,✅ M1 Pro 1,200,14,262.65,12.75,235.16,21.95,232.55,35.52,8e672ef
+apple_summary,✅ M1 Pro 1,200,16,302.14,12.75,270.37,22.34,266.25,36.41,8e672ef
+apple_summary,✅ M1 Max 1,400,24,453.03,22.55,405.87,37.81,400.26,54.61,8e672ef
+apple_summary,✅ M1 Max 1,400,32,599.53,23.03,537.37,40.2,530.06,61.19,8e672ef
+apple_summary,✅ M1 Ultra 1,800,48,875.81,33.92,783.45,55.69,772.24,74.93,8e672ef
+apple_summary,✅ M1 Ultra 1,800,64,1168.89,37.01,1042.95,59.87,1030.04,83.73,8e672ef
+apple_summary,,,,,,,,,,
+apple_summary,✅ M2 2,100,8,,,147.27,12.18,145.91,21.7,8e672ef
+apple_summary,✅ M2 2,100,10,201.34,6.72,181.4,12.21,179.57,21.91,8e672ef
+apple_summary,✅ M2 Pro 2,200,16,312.65,12.47,288.46,22.7,294.24,37.87,8e672ef
+apple_summary,✅ M2 Pro 2,200,19,384.38,13.06,344.5,23.01,341.19,38.86,8e672ef
+apple_summary,✅ M2 Max 2,400,30,600.46,24.16,540.15,39.97,537.6,60.99,8e672ef
+apple_summary,✅ M2 Max 2,400,38,755.67,24.65,677.91,41.83,671.31,65.95,8e672ef
+apple_summary,✅ M2 Ultra 2,800,60,1128.59,39.86,1003.16,62.14,1013.81,88.64,8e672ef
+apple_summary,✅ M2 Ultra 2,800,76,1401.85,41.02,1248.59,66.64,1238.48,94.27,8e672ef
+apple_summary,,,,,,,,,,
+apple_summary,🟥 M3 3,100,8,,,,,,,
+apple_summary,🟨 M3 3,100,10,,,187.52,12.27,186.75,21.34,8e672ef
+apple_summary,🟨 M3 Pro 3,150,14,,,272.11,17.44,269.49,30.65,8e672ef
+apple_summary,✅ M3 Pro 3,150,18,357.45,9.89,344.66,17.53,341.67,30.74,8e672ef
+apple_summary,✅ M3 Max 3,300,30,589.41,19.54,566.4,34.3,567.59,56.58,8e672ef
+apple_summary,✅ M3 Max 3,400,40,779.17,25.09,757.64,42.75,759.7,66.31,8e672ef
+apple_summary,✅ M3 Ultra 3,800,60,1121.80,42.24,1085.76,63.55,1073.09,88.40,8e672ef
+apple_summary,✅ M3 Ultra 3,800,80,1538.34,39.78,1487.51,63.93,1471.24,92.14,8e672ef
+apple_summary,,,,,,,,,,
+apple_summary,🟥 M4 4,120,8,,,,,,,
+apple_summary,✅ M4 4,120,10,230.18,7.43,223.64,13.54,221.29,24.11,8e672ef
+apple_summary,✅ M4 Pro 4,273,16,381.14,17.19,367.13,30.54,364.06,49.64,8e672ef
+apple_summary,✅ M4 Pro 4,273,20,464.48,17.18,449.62,30.69,439.78,50.74,8e672ef
+apple_summary,✅ M4 Max 4,410,32,736.25,24.29,718.56,43.87,713.93,69.95,8e672ef
+apple_summary,✅ M4 Max 4,546,40,922.83,31.64,891.94,54.05,885.68,83.06,8e672ef
+apple_summary,🟥 M4 Ultra,820,64,,,,,,,
+apple_summary,🟥 M4 Ultra,1092,80,,,,,,,
+apple_summary,,,,,,,,,,
+apple_summary,🟥 M5 5,154,8,,,,,,,
+apple_summary,🟨 M5 5,154,10,,,715.42,18.42,722.79,31.88,c1d0e7a
+apple_summary,✅ M5 Pro 5,307,16,1310.78,21.39,1302.59,38.94,1340.44,67.59,60081bb
+apple_summary,✅ M5 Pro 5,307,20,1588.78,21.55,1553.86,38.92,1620.64,66.33,c1d0e7a
+apple_summary,🟥 M5 Max 5,460,32,,,,,,,
+apple_summary,✅ M5 Max 5,614,40,3158.49,37.11,3143.81,72.42,3219.99,119.92,c1d0e7a
+apple_summary,🟥 M5 Ultra 5,1228,64,,,,,,,
+apple_summary,✅ M5 Ultra 5,1228,80,5207.14,73.60,4910.55,119.01,4944.66,179.10,c1d0e7a
+apple_summary,,,,,,,,,,
+apple_summary,🟥 M6 6,154,8,,,,,,,
+apple_summary,✅ M6 6,170,8,952.53,11.59,970.46,21.01,988.93,35.74,c1d0e7a
+apple_summary,,,,,,,,,,
+apple_m2ultra_history,2023 Nov 21,,,,,,,,
+apple_m2ultra_history,M2 Ultra 8e672ef,800,76,1401.85,41.02,1248.59,66.64,1238.48,94.27
+apple_m2ultra_history,2024 Nov 12,,,,,,,,
+apple_m2ultra_history,M2 Ultra 86ed72d + FA,800,76,1525.95,43.15,1368.18,73.11,1391.78,108.80
+apple_m2ultra_history,2025 Aug 02,,,,,,,,
+apple_m2ultra_history,M2 Ultra 5c0eb5e + FA,800,76,1561.35,43.24,1386.97,73.35,1412.42,109.41
+apple_m2ultra_history,2026 Aug 25,,,,,,,,
+apple_m2ultra_history,M2 Ultra c1d0e7a + FA,800,76,1627.82,49.55,1486.51,82.83,1488.81,125.21

@@ -1,0 +1,113 @@
+table,Chip,Memory,pp512 t/s,tg128 t/s,Commit,Thanks to
+cuda_no_fa,RTX 5090,32 GB / GDDR7 / 512 bit,14073.41 ± 115.16,290.02 ± 1.10,8cf6b42,@totaldev
+cuda_no_fa,RTX PRO 6000 Blackwell,96 GB / GDDR7 / 512 bit,14854.63 ± 22.73,274.20 ± 0.14,79c1160,@Tom94
+cuda_no_fa,H100 80 GB,80 GB / HBM3 / 5120 bit,9918.34 ± 176.97,267.81 ± 1.54,5143fa8,@Hedede
+cuda_no_fa,A100 80 GB,80 GB / HBM2e / 5120 bit,4849.53 ± 8.94,190.88 ± 0.33,5143fa8,@Hedede
+cuda_no_fa,RTX 4090 D,24 GB / GDDR6X / 384 bit,10293.86 ± 134.72,189.33 ± 0.19,79c1160,@autonomous-ai-lab
+cuda_no_fa,RTX 4090,24 GB / GDDR6X / 384 bit,11992.70 ± 107.99,186.21 ± 0.13,2241453,@lhl
+cuda_no_fa,RTX 5080,16 GB / GDDR7 / 256 bit,8297.36 ± 9.50,181.99 ± 0.42,8a4280c,@Hedede
+cuda_no_fa,RTX 5070 Ti,16 GB / GDDR7 / 256 bit,6952.38 ± 13.73,176.85 ± 0.07,933414c,@TinyServal
+cuda_no_fa,RTX 6000 Ada,48 GB / GDDR6 / 384 bit,9229.23 ± 101.78,176.07 ± 0.26,b8e09f0,@Hedede
+cuda_no_fa,RTX 3090 Ti,24 GB / GDDR6X / 384 bit,6567.49 ± 20.30,171.19 ± 3.98,9c35706,@slaren
+cuda_no_fa,RTX 3090,24 GB / GDDR6X / 384 bit,5174.69 ± 21.83,158.16 ± 0.21,c76b420,@m18coppola
+cuda_no_fa,RTX 5090 Laptop,24 GB / GDDR7 / 384 bit,6667.06 ± 123.40,156.49 ± 0.98,29f1482,@rs38
+cuda_no_fa,L40,48 GB / GDDR6 / 384 bit,8870.49 ± 378.76,152.01 ± 0.28,ee09828,@Hedede
+cuda_no_fa,RTX 4080 SUPER,16 GB / GDDR6X / 256 bit,8125.15 ± 41.05,148.33 ± 0.20,81086cd,@zacharyarnaise
+cuda_no_fa,RTX 4080,16 GB / GDDR6X / 256 bit,8031.64 ± 26.49,142.49 ± 0.16,20638e4,@Ristovski
+cuda_no_fa,RTX 3080,10 GB / GDDR6X / 320 bit,5013.86 ± 24.80,139.65 ± 0.99,9c35706,@slaren
+cuda_no_fa,RTX A6000,48 GB / GDDR6 / 384 bit,4913.93 ± 6.79,138.73 ± 2.75,4795c91,@Hedede
+cuda_no_fa,RTX 4070 Ti SUPER,16 GB / GDDR6X / 256 bit,6924.53 ± 13.87,132.26 ± 0.16,9c35706,@Ristovski
+cuda_no_fa,RTX PRO 4000 Blackwell,24 GB / GDDR7 / 192 bit,4992.83 ± 113.52,131.66 ± 0.20,7d77f07,@Hedede
+cuda_no_fa,RTX A5000,24 GB / GDDR6 / 384 bit,4028.16 ± 19.14,130.07 ± 2.74,e5155e6,@Hedede
+cuda_no_fa,Tesla V100,32 GB / HBM2 / 4096 bit,3042.64 ± 40.71,129.08 ± 0.05,51f5a45,@Hedede
+cuda_no_fa,RTX 5070,12 GB / GDDR7 / 192 bit,5184.75 ± 18.70,127.54 ± 0.46,,@Spyro000
+cuda_no_fa,A40,48 GB / GDDR6 / 384 bit,4609.01 ± 10.67,124.11 ± 0.17,3470a5c,@Hedede
+cuda_no_fa,A30,24 GB / HBM2e / 3072 bit,2767.10 ± 1.88,124.81 ± 0.16,583cb83,@Hedede
+cuda_no_fa,Titan V,12 GB / HBM2 / 3072 bit,2617.46 ± 2.10,108.79 ± 0.05,e56abd2,@Hedede
+cuda_no_fa,RTX 2080 Ti,11 GB / GDDR6 / 352 bit,2890.66 ± 2.42,107.51 ± 0.21,9c35706,@ariya
+cuda_no_fa,Quadro RTX 6000,24 GB / GDDR6 / 384 bit,2751.18 ± 19.43,102.77 ± 0.04,b8e09f0,@Hedede
+cuda_no_fa,Quadro RTX 8000,48 GB / GDDR6 / 384 bit,2709.95 ± 3.35,102.68 ± 0.03,b8e09f0,@Hedede
+cuda_no_fa,RTX A4500,20 GB / GDDR6 / 320 bit,2827.20 ± 66.43,97.32 ± 2.80,5cdb27e,@aleksyx
+cuda_no_fa,RTX 5060 Ti,16 GB / GDDR7 / 128 bit,3737.25 ± 6.79,90.94 ± 0.02,89d1029,@mike-llamacpp
+cuda_no_fa,RTX 2070 SUPER,8 GB / GDDR6 / 256 bit,2088.34 ± 1.94,88.06 ± 0.28,bc07349,@phstudy
+cuda_no_fa,RTX A4000,16 GB / GDDR6 / 256 bit,2684.06 ± 15.28,83.77 ± 0.37,65349f2,@TinyServal
+cuda_no_fa,Titan Xp,12 GB / GDDR5X / 384 bit,1154.96 ± 1.46,76.08 ± 0.08,c4510dc,@Hedede
+cuda_no_fa,RTX 3060,12 GB / GDDR6 / 192 bit,2137.50 ± 10.12,75.57 ± 0.07,baa9255,@QuantiusBenignus
+cuda_no_fa,Quadro RTX 4000,8 GB / GDDR6 / 256 bit,1536.89 ± 0.90,65.62 ± 0.62,7d77f07,@Hedede
+cuda_no_fa,RTX 4060 Ti,8 GB / GDDR6 / 128 bit,3394.63 ± 7.44,63.86 ± 0.01,89d1029,@mike-llamacpp
+cuda_no_fa,GTX 1080 Ti,11 GB / GDDR5X / 352 bit,1084.41 ± 3.01,62.49 ± 0.06,9c35706,@ariya
+cuda_no_fa,RTX A4000 Ada,20 GB / GDDR6 / 160 bit,2779.77 ± 9.91,61.83 ± 0.04,a74a0d6,@sdwolfz
+cuda_no_fa,RTX 2060 SUPER,8 GB / GDDR6 / 256 bit,1420.24 ± 1.95,60.04 ± 0.01,5c0eb5e,@ggerganov
+cuda_no_fa,Tesla P100,16 GB / HBM2 / 4096 bit,760.80 ± 2.92,58.35 ± 0.00,b8372ee,@Hedede
+cuda_no_fa,DGX Spark,128 GB / LPDDR5x,3062.31 ± 11.02,57.21 ± 0.06,5acd455,@ggerganov
+cuda_no_fa,Tesla P40,24 GB / GDDR5 / 384 bit,1007.42 ± 1.23,54.74 ± 0.07,c76b420,@m18coppola
+cuda_no_fa,RTX 2000 Ada,16 GB / GDDR6 / 128 bit,1956.22 ± 7.74,50.62 ± 0.04,756cfea,@DigitalRudeness
+cuda_no_fa,Tesla T4,16 GB / GDDR6 / 256 bit,1219.06 ± 4.18,46.38 ± 0.73,d32e03f,@pt13762104
+cuda_no_fa,RTX 4050 Laptop,6 GB / GDDR6 / 96 bit,1725.85 + 17.85,43.72 + 0.41,d79d8f3,@TimCabbage
+cuda_no_fa,GTX 1660,6 GB / GDDR5 / 192 bit,148.91 ± 0.01,41.35 ± 0.02,9515c61,@ariya
+cuda_no_fa,Tesla M40,24 GB / GDDR5 / 384 bit,282.65 ± 0.15,38.04 ± 0.02,97d5117,@Hedede
+cuda_no_fa,GTX 1070 Ti,8 GB / GDDR5 / 256 bit,714.44 ± 2.04,37.82 ± 0.02,79c1160,@pebaryan
+cuda_no_fa,Jetson AGX Orin,64 GB / LPDDR5 / 256 bit,991.31 ± 1.15,33.58 ± 0.14,c1b1876,@TinyServal
+cuda_no_fa,Tesla P4,8 GB / GDDR5 / 256 bit,514.53 ± 3.06,33.29 ± 0.00,c76b420,@m18coppola
+cuda_no_fa,P106-100,6 GB / GDDR5 / 192 bit,406.94 ± 0.25,30.40 ± 0.02,5fd160b,@pebaryan
+cuda_no_fa,GTX 1060,6 GB / GDDR5 / 192 bit,416.85 ± 1.75,27.79 ± 0.02,5fd160b,@pebaryan
+cuda_no_fa,Quadro T1000,4 GB / GDDR5 / 128 bit,79.44 ± 0.01,27.82 ± 0.18,f6da8cb,@hanabu
+cuda_no_fa,Quadro P2000,5 GB / GDDR5 / 160 bit,309.30 ± 0.05,23.63 ± 0.00,baa9255,@TinyServal
+cuda_no_fa,Quadro P1000,4 GB / GDDR5 / 128 bit,183.40 ± 0.11,13.99 ± 0.13,1e74897,@aleksyx
+cuda_no_fa,Tesla K80,12 GB / GDDR5 / 384 bit,133.14 ± 0.55,13.80 ± 0.02,32732f2,@pebaryan
+cuda_fa,RTX 5090,32 GB / GDDR7 / 512 bit,14970.15 ± 381.06,300.40 ± 0.28,8cf6b42,@totaldev
+cuda_fa,RTX PRO 6000 Blackwell,96 GB / GDDR7 / 512 bit,16618.98 ± 20.66,281.11 ± 0.41,5143fa8,@Tom94
+cuda_fa,H100 80 GB,80 GB / HBM3 / 5120 bit,11263.29 ± 98.34,280.74 ± 1.17,5143fa8,@Hedede
+cuda_fa,A100 80 GB,80 GB / HBM2e / 5120 bit,5285.96 ± 6.58,200.90 ± 0.12,5143fa8,@Hedede
+cuda_fa,RTX 4090 D,24 GB / GDDR6X / 384 bit,12506.97 ± 11.51,191.57 ± 0.03,79c1160,@autonomous-ai-lab
+cuda_fa,RTX 4090,24 GB / GDDR6X / 384 bit,14770.63 ± 102.93,188.96 ± 0.05,2241453,@lhl
+cuda_fa,RTX 5080,16 GB / GDDR7 / 256 bit,9487.70 ± 21.89,184.68 ± 0.05,8a4280c,@Hedede
+cuda_fa,RTX 5070 Ti,16 GB / GDDR7 / 256 bit,8419.56 ± 35.50,182.43 ± 0.09,933414c,@TinyServal
+cuda_fa,RTX 6000 Ada,48 GB / GDDR6 / 384 bit,10576.85 ± 530.21,179.47 ± 0.32,b8e09f0,@Hedede
+cuda_fa,RTX 3090 Ti,24 GB / GDDR6X / 384 bit,6924.01 ± 10.76,172.26 ± 1.31,9c35706,@slaren
+cuda_fa,RTX PRO 4500 Blackwell,32 GB / GDDR7 / 256 bit,7251.66 ± 92.40,168.90 ± 0.20,becc481,@Hedede
+cuda_fa,RTX 3090,24 GB / GDDR6X / 384 bit,5560.06 ± 16.28,161.89 ± 0.18,c76b420,@m18coppola
+cuda_fa,RTX 5090 Laptop,24 GB / GDDR7 / 384 bit,7641.89 ± 275.60,158.14 ± 4.70,29f1482,@rs38
+cuda_fa,L40,48 GB / GDDR6 / 384 bit,10097.64 ± 671.22,153.76 ± 0.12,ee09828,@Hedede
+cuda_fa,RTX 4080 SUPER,16 GB / GDDR6X / 256 bit,9439.01 ± 56.75,147.48 ± 1.41,81086cd,@zacharyarnaise
+cuda_fa,RTX 4080,16 GB / GDDR6X / 256 bit,9205.93 ± 22.31,143.47 ± 0.02,20638e4,@Ristovski
+cuda_fa,RTX A6000,48 GB / GDDR6 / 384 bit,5662.39 ± 13.87,144.87 ± 0.18,4795c91,@Hedede
+cuda_fa,RTX 3080,10 GB / GDDR6X / 320 bit,5569.56 ± 14.04,139.95 ± 0.95,9c35706,@slaren
+cuda_fa,RTX PRO 4000 Blackwell,24 GB / GDDR7 / 192 bit,5674.44 ± 139.53,136.38 ± 0.13,7d77f07,@Hedede
+cuda_fa,RTX A5000,24 GB / GDDR6 / 384 bit,4552.15 ± 9.68,135.83 ± 0.11,e5155e6,@Hedede
+cuda_fa,Tesla V100,32 GB / HBM2 / 4096 bit,2973.78 ± 3.62,134.76 ± 0.02,51f5a45,@Hedede
+cuda_fa,RTX 4070 Ti SUPER,16 GB / GDDR6X / 256 bit,7612.32 ± 37.35,132.85 ± 0.31,9c35706,@Ristovski
+cuda_fa,RTX 5070,12 GB / GDDR7 / 192 bit,5783.44 ± 36.95,128.21 ± 2.52,,@Spyro000
+cuda_fa,A40,48 GB / GDDR6 / 384 bit,5256.38 ± 19.39,126.24 ± 0.06,3470a5c,@Hedede
+cuda_fa,A30,24 GB / HBM2e / 3072 bit,3068.72 ± 0.63,131.93 ± 0.18,583cb83,@Hedede
+cuda_fa,Titan V,12 GB / HBM2 / 3072 bit,2481.25 ± 1.31,112.17 ± 0.01,e56abd2,@Hedede
+cuda_fa,RTX 2080 Ti,11 GB / GDDR6 / 352 bit,3107.61 ± 4.34,109.17 ± 0.07,9c35706,@ariya
+cuda_fa,Quadro RTX 6000,24 GB / GDDR6 / 384 bit,3053.96 ± 1.37,104.38 ± 0.04,b8e09f0,@Hedede
+cuda_fa,Quadro RTX 8000,48 GB / GDDR6 / 384 bit,3052.35 ± 5.64,103.63 ± 0.02,b8e09f0,@Hedede
+cuda_fa,RTX A4500,20 GB / GDDR6 / 320 bit,3453.10 ± 49.19,103.00 ± 0.25,5cdb27e,@aleksyx
+cuda_fa,RTX 5060 Ti,16 GB / GDDR7 / 128 bit,4195.53 ± 1.98,93.46 ± 0.01,89d1029,@mike-llamacpp
+cuda_fa,RTX 2070 SUPER,8 GB / GDDR6 / 256 bit,2293.29 ± 5.91,87.71 ± 0.29,bc07349,@phstudy
+cuda_fa,RTX A4000,16 GB / GDDR6 / 256 bit,2807.83 ± 52.44,85.17 ± 0.66,65349f2,@TinyServal
+cuda_fa,RTX 3060,12 GB / GDDR6 / 192 bit,2407.67 ± 3.73,76.92 ± 0.03,baa9255,@QuantiusBenignus
+cuda_fa,Titan Xp,12 GB / GDDR5X / 384 bit,1218.12 ± 1.82,73.84 ± 0.04,c4510dc,@Hedede
+cuda_fa,Quadro RTX 4000,8 GB / GDDR6 / 256 bit,1662.80 ± 2.04,67.62 ± 0.67,7d77f07,@Hedede
+cuda_fa,RTX 4060 Ti,8 GB / GDDR6 / 128 bit,3803.45 ± 70.80,64.03 ± 0.53,89d1029,@mike-llamacpp
+cuda_fa,RTX A4000 Ada,20 GB / GDDR6 / 160 bit,3171.86 ± 4.34,61.37 ± 0.01,a74a0d6,@sdwolfz
+cuda_fa,Tesla P100,16 GB / HBM2 / 4096 bit,787.36 ± 3.27,61.99 ± 0.00,b8372ee,@Hedede
+cuda_fa,GTX 1080 Ti,11 GB / GDDR5X / 352 bit,1138.14 ± 2.02,61.38 ± 0.03,9c35706,@ariya
+cuda_fa,RTX 2060 SUPER,8 GB / GDDR6 / 256 bit,1563.77 ± 0.51,61.13 ± 0.05,5c0eb5e,@ggerganov
+cuda_fa,DGX Spark,128 GB / LPDDR5x,3661.37 ± 38.66,56.74 ± 0.03,5acd455,@ggerganov
+cuda_fa,Tesla P40,24 GB / GDDR5 / 384 bit,1079.66 ± 0.18,53.73 ± 0.05,c76b420,@m18coppola
+cuda_fa,RTX 2000 Ada,16 GB / GDDR6 / 128 bit,2250.14 ± 5.91,50.71 ± 0.01,756cfea,@DigitalRudeness
+cuda_fa,Tesla T4,16 GB / GDDR6 / 256 bit,1309.73 ± 1.02,44.03 ± 0.57,d32e03f,@pt13762104
+cuda_fa,GTX 1660,6 GB / GDDR5 / 192 bit,154.45 ± 0.52,41.43 ± 0.01,9515c61,@ariya
+cuda_fa,Tesla M40,24 GB / GDDR5 / 384 bit,290.17 ± 0.11,39.98 ± 0.01,97d5117,@Hedede
+cuda_fa,GTX 1070 Ti,8 GB / GDDR5 / 256 bit,790.52 ± 2.39,37.87 ± 0.00,79c1160,@pebaryan
+cuda_fa,Jetson AGX Orin,64 GB / LPDDR5 / 256 bit,1171.96 ± 4.70,35.88 ± 0.18,c1b1876,@TinyServal
+cuda_fa,Tesla P4,8 GB / GDDR5 / 256 bit,529.53 ± 2.12,33.12 ± 0.03,c76b420,@m18coppola
+cuda_fa,P106-100,6 GB / GDDR5 / 192 bit,438.49 ± 0.38,30.64 ± 0.06,5fd160b,@pebaryan
+cuda_fa,GTX 1060,6 GB / GDDR5 / 192 bit,446.19 ± 0.81,28.18 ± 0.01,5fd160b,@pebaryan
+cuda_fa,Quadro T1000,4 GB / GDDR5 / 128 bit,27.46 ± 0.23,27.46 ± 0.23,f6da8cb,@hanabu
+cuda_fa,Quadro P2000,5 GB / GDDR5 / 160 bit,311.55 ± 0.19,23.76 ± 0.01,baa9255,@TinyServal
+cuda_fa,Tesla K80,12 GB / GDDR5 / 384 bit,133.36 ± 0.60,14.27 ± 0.32,32732f2,@pebaryan
+cuda_fa,Quadro P1000,4 GB / GDDR5 / 128 bit,173.82 ± 0.02,13.65 ± 0.14,1e74897,@aleksyx
